@@ -2,60 +2,34 @@
 
 ![image](https://github.com/mcflj0911/sinkers_1945/blob/main/doodads/splash.png)
 
-**Sinkers 1945** is a high-fidelity, retro-styled naval strategy game built with Python and Pygame. It evolves the classic "Battleship" formula by adding unit-specific abilities, cooldown management, and an AI that features reactive tactical logic and "thinking" simulations.
+**Sinkers 1945** is a high-fidelity, retro-styled naval strategy game built with Python and Pygame. It evolves the classic "Battleship" formula by adding unit-specific abilities, cooldown management, and an immersive atmospheric engine.
 
-## 🚢 Fleet Intelligence & Attack Patterns
+## 🌊 Dynamic Weather & Environment
 
-Strategic success depends on understanding your fleet's strike capabilities, cooldowns, and their ability to evade enemy fire.
+The battlefield and HUD are rendered with a multi-layered environmental simulation:
+* **Parallax Wind Streaks**: Semi-transparent wind particles drift across the board at higher speeds than the water.
+* **Sector-Locked Clouds**: Atmospheric clouds are clipped to their respective fields (AI North / Player South) and flow in the direction of the local current.
+* **Intel Weather Sync**: The Fleet Intel panel now features localized rain and lightning effects that synchronize across the multi-ship display area.
+* **Naval Silhouettes**: All combat units (excluding the 1x1 Scout) feature a **triangular bow** to indicate orientation.
 
-### 1. Scout (Reconnaissance)
-* **Role**: Tactical Intel.
-* **Attack Pattern**: **Area Scan**. Reveals a massive 16x16 grid area to strip away the Fog of War.
-* **Ammo**: 1.
-* **Evasion Stat**: **0%** (Highly vulnerable).
-* **Cooldown**: 6 Turns.
-* **Strategy**: Use early to locate high-value targets like the Carrier.
+## 🚢 Fleet Intelligence & Strike Profiles
 
-### 2. Destroyer (Area Denial)
-* **Role**: Multi-target Strike.
-* **Attack Pattern**: **Cross Pattern (+)**. Strikes the center target and the four adjacent tiles (Up, Down, Left, Right).
-* **Ammo**: 1.
-* **Evasion Stat**: **15%**. 
-* **Cooldown**: 4 Turns.
-* **Strategy**: Best used when you suspect a cluster of small ships or to finish off a unit that has moved slightly.
+The HUD now supports a dual-intel display, rendering high-resolution technical readouts for multiple flagship classes simultaneously in the right-hand log area.
 
-### 3. Carrier (Heavy Strike)
-* **Role**: Capital Ship / Heavy Damage.
-* **Attack Pattern**: **2x2 Carpet Bomb**. Strikes a square block of 4 tiles simultaneously.
-* **Ammo**: 5.
-* **Evasion Stat**: **8%**.
-* **Cooldown**: 6 Turns.
-* **Strategy**: Provides the highest damage output in a single turn. Devastating if a unit's location is confirmed.
+| Unit | Role | Attack Pattern | Special Passive / Traits | Cooldown |
+| :--- | :--- | :--- | :--- | :--- |
+| **Scout** | Tactical Recon | **Area Scan** | **Wide-Band Sonar**: Reveals a massive 16x16 grid area. No projectile trail. | 6 Turns |
+| **Destroyer** | Area Denial | **Barrage** | **Suppressive Fire**: Strikes 8 random coordinates in a 4x4 zone. | 4 Turns |
+| **Carrier** | Flagship | **Carpet Bomb** | **Air Superiority**: Strikes a 2x2 square. No tracer trails. | 6 Turns |
+| **Frigate** | Escort Strike | **Tactical Square** | **Medium Support**: Strikes a 2x2 square with direct-fire tracers. | 2 Turns |
+| **Corvette** | Precision Strike | **1x1 Precise** | **Tracking Radar**: Attacks **ignore enemy evasion**. | 0 Turns |
 
-### 4. Frigate (Escort Strike)
-* **Role**: Medium Support.
-* **Attack Pattern**: **2x2 Square**. Similar to the Carrier but with reduced ammo capacity.
-* **Ammo**: 2.
-* **Evasion Stat**: **20%**.
-* **Cooldown**: 2 Turns.
-* **Strategy**: Highly versatile with a short cooldown, allowing for frequent harassment of enemy lines.
+## 🚀 SHD Tactical HUD & VFX
 
-### 5. Corvette (Precision Strike)
-* **Role**: Rapid Response.
-* **Attack Pattern**: **1x1 Precise**. A single, highly accurate shot.
-* **Ammo**: 1.
-* **Evasion Stat**: **40%** (Highest mobility).
-* **Cooldown**: 0 Turns (Always Ready).
-* **Strategy**: Your most reliable unit for surgical strikes once a target is revealed.
-
-## 🚀 Key Features
-
-* **Tactical AI**:
-    * **Strategic Repositioning**: The AI has a 30% chance to move its ships during its turn to evade your next strike.
-    * **Simulated Thinking**: Includes a random pause (0.4s to 0.9s) between turns where the AI "analyzes tactics" with a pulsing visual indicator in the side panel.
-* **Dynamic Visuals**: Real-time ocean rendering with parallax scrolling, Fog of War mechanics, and `BurningPixel` impact animations.
-* **Admiral's Log**: A real-time combat log tracking every move, strike, and evasion during the mission.
-* **Scoring System**: Performance-based scoring that considers hit efficiency and fleet survival.
+* **SHD Sonar Beeps**: The Admiral’s Log features a "Strategic Homeland Division" aesthetic, with randomized sonar pulse rings that ripple behind the text.
+* **Timestamped Logging**: Every tactical action in the Admiral's Log is now automatically appended with an ISO-8601 high-precision timestamp for mission debriefing.
+* **Kinetic Tracers**: Active fire trails disappear after 0.6 seconds to maintain a clean tactical view.
+* **Damage VFX**: Damaged units emit persistent smoke particles and occasional sparks that drift based on the sector's wind and ship bobbing movement.
 
 ## 🛠️ Controls
 
@@ -66,18 +40,28 @@ Strategic success depends on understanding your fleet's strike capabilities, coo
 | **R** | Retreat (Surrender) or Restart from HQ |
 | **Start Button** | Deploy Fleet |
 
-## 📦 Installation & Setup
+## 📦 # Installation & Setup
 
-1.  **Prerequisites**:
-    * Python 3.x
-    * Pygame library (`pip install pygame`)
+### 1. Install Python
+The game requires **Python 3.6** or higher. Download the installer for your operating system from the official Python website:
+* **All Platforms:** [https://www.python.org/downloads/](https://www.python.org/downloads/)
+* **Recommended for Windows (3.6.8):** [Python 3.6.8 Download](https://www.python.org/downloads/release/python-368/)
 
-2.  **Asset Structure**:
-    Ensure the following files are in a folder named `doodads/` within the root directory:
-    * **Audio**: `sonar.mp3`, `shot_1.mp3`, `shot_2.mp3`, `plane.mp3`, `bell.mp3`, `start.mp3`, `move.mp3`, `music.mp3`.
-    * **Visuals**: `splash.png`.
+> **Note:** During installation on Windows, ensure you check the box that says **"Add Python to PATH"**.
 
-3.  **Run the Game**:
-    ```bash
-    python main.py
-    ```
+### 2. Install Dependencies
+Open your terminal (macOS/Linux) or Command Prompt/PowerShell (Windows) and run the following command to install the required **Pygame Community Edition** library:
+```bash
+pip install pygame-ce
+```
+
+### 3. Verify Asset Structure
+Ensure your project folder is organized as follows:
+* `main.py`
+* `doodads/` (Contains `ship.png`, `ship2.png`, `sonar.mp3`, `music.mp3`, etc.)
+
+### 4. Run the Game
+Navigate to your project directory in the terminal and execute the game using this command:
+```bash
+python main.py
+```
