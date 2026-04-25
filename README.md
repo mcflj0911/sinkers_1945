@@ -1,6 +1,6 @@
-# Sinker 1945: Strategic Intel
+# Sinkers 1945: Strategic Intel
 
-**Sinker 1945** is a high-fidelity, retro-styled naval strategy game built with Python and Pygame. It evolves the classic "Battleship" formula by adding unit-specific abilities, cooldown management, and an AI that features reactive tactical logic and "thinking" simulations.
+**Sinkers 1945** is a high-fidelity, retro-styled naval strategy game built with Python and Pygame. It evolves the classic "Battleship" formula by adding unit-specific abilities, cooldown management, and an AI that features reactive tactical logic and "thinking" simulations.
 
 ## 🚢 Fleet Intelligence & Attack Patterns
 
@@ -18,7 +18,7 @@ Strategic success depends on understanding your fleet's strike capabilities, coo
 * **Role**: Multi-target Strike.
 * **Attack Pattern**: **Cross Pattern (+)**. Strikes the center target and the four adjacent tiles (Up, Down, Left, Right).
 * **Ammo**: 1.
-* **Evasion Stat**: **15%**.
+* **Evasion Stat**: **15%**. 
 * **Cooldown**: 4 Turns.
 * **Strategy**: Best used when you suspect a cluster of small ships or to finish off a unit that has moved slightly.
 
