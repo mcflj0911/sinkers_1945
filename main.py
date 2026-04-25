@@ -25,6 +25,15 @@ OCEAN_LIGHT = (0, 90, 140)
 OCEAN_FOAM = (100, 180, 220)
 PREVIEW_COLOR = (0, 255, 255, 80) 
 
+# Unit Visual Mapping
+UNIT_SCHEMES = {
+    "Scout": {"color": (200, 255, 100), "detail": "rect"},
+    "Corvette": {"color": (100, 200, 255), "detail": "stripe"},
+    "Frigate": {"color": (200, 100, 255), "detail": "dots"},
+    "Destroyer": {"color": (255, 150, 50), "detail": "cross"},
+    "Carrier": {"color": (210, 225, 235), "detail": "deck"} # Updated: Lighter Steel Blue
+}
+
 # Asset Directory
 ASSET_DIR = "doodads"
 
@@ -57,7 +66,7 @@ shot_2_sound = load_sound("shot_2.mp3")
 plane_sound = load_sound("plane.mp3")
 bell_sound = load_sound("bell.mp3")
 start_sound = load_sound("start.mp3")
-move_sound = load_sound("move.mp3") # Added move sound asset
+move_sound = load_sound("move.mp3")
 
 music_path = os.path.join(ASSET_DIR, "music.mp3")
 if os.path.exists(music_path):
@@ -95,8 +104,8 @@ for y in range(GRID_SIZE):
 class BurningPixel:
     def __init__(self, x, y):
         self.x, self.y = x, y
-        self.life = random.randint(15, 35)
-        self.vx, self.vy = random.uniform(-0.5, 0.5), random.uniform(-1.0, -0.2)
+        self.life = random.randint(15, 45)
+        self.vx, self.vy = random.uniform(-0.3, 0.3), random.uniform(-0.8, -0.1)
         
     def update(self):
         self.life -= 1
@@ -105,10 +114,10 @@ class BurningPixel:
         return self.life > 0
 
     def draw(self, surface):
-        if self.life > 20: col = (255, 255, 100)
-        elif self.life > 10: col = (255, 150, 0)
-        else: col = (200, 50, 0)
-        pygame.draw.rect(surface, col, (self.x + SIDE_PANEL_WIDTH, self.y, max(1, self.life//10), max(1, self.life//10)))
+        if self.life > 25: col = (255, 255, 150)
+        elif self.life > 12: col = (255, 100, 0)
+        else: col = (150, 20, 0)
+        pygame.draw.rect(surface, col, (self.x + SIDE_PANEL_WIDTH, self.y, max(1, self.life//12), max(1, self.life//12)))
 
 # --- 6. Game Logic & Classes ---
 class Unit:
@@ -119,6 +128,7 @@ class Unit:
         self.grid_pos = []
         self.rects = []
         self.is_revealed = False 
+        self.scheme = UNIT_SCHEMES.get(name, {"color": PLAYER_COLOR, "detail": "rect"})
         self.update_geometry(x, y)
 
     def update_geometry(self, x, y):
@@ -146,12 +156,25 @@ class Unit:
             
             if self.side == "player" or rev:
                 known = True
-                col = PLAYER_COLOR if self.side == "player" else AI_COLOR
-                if self.side == "player" and self.cooldown > 0: col = COOLDOWN_GRAY
-                if not self.health_map[i]: col = (100, 30, 30) if self.side == "ai" else (80, 80, 80)
-                if self.is_destroyed: col = DESTROYED_COLOR
-                if self.is_selected: col = GLOW_COLOR
-                pygame.draw.rect(surface, col, rect)
+                base_col = self.scheme["color"]
+                if self.side == "player" and self.cooldown > 0: base_col = COOLDOWN_GRAY
+                if not self.health_map[i]: base_col = (60, 20, 20) if self.side == "ai" else (50, 50, 50)
+                if self.is_destroyed: base_col = DESTROYED_COLOR
+                if self.is_selected: base_col = GLOW_COLOR
+                
+                pygame.draw.rect(surface, base_col, rect)
+                
+                detail = self.scheme["detail"]
+                detail_col = (max(0, base_col[0]-40), max(0, base_col[1]-40), max(0, base_col[2]-40))
+                if detail == "stripe":
+                    pygame.draw.line(surface, detail_col, rect.topleft, rect.bottomright, 1)
+                elif detail == "dots":
+                    pygame.draw.circle(surface, detail_col, rect.center, 2)
+                elif detail == "cross":
+                    pygame.draw.line(surface, detail_col, (rect.centerx, rect.top), (rect.centerx, rect.bottom), 1)
+                elif detail == "deck":
+                    pygame.draw.rect(surface, (100, 100, 100), rect.inflate(-4, -4))
+
                 pygame.draw.rect(surface, BLACK, rect, 1)
 
         if known and not self.is_destroyed:
@@ -172,10 +195,13 @@ def fire_at(tx, ty, targets, side_firing):
                 unit.health_map[idx] = False
                 stats["hits"] += 1
                 if side_firing == "PLAYER":
+                    # Unified real-time score updates
                     current_score += 100
                     if unit.is_destroyed: current_score += 500
-                for _ in range(12):
-                    active_fires.append(BurningPixel(tx * CELL_SIZE + random.randint(0, 9), ty * CELL_SIZE + random.randint(0, 9)))
+                
+                for _ in range(20):
+                    active_fires.append(BurningPixel(tx * CELL_SIZE + random.randint(0, 8), ty * CELL_SIZE + random.randint(0, 8)))
+                
                 add_log(side_firing, "STRIKE", f"Impact! {unit.name} hit at {tx},{ty}", is_hit=True)
                 return "HIT"
             else:
@@ -187,9 +213,10 @@ def fire_at(tx, ty, targets, side_firing):
 
 def calculate_final_score():
     global final_score
-    eff = (player_stats["hits"] / max(1, player_stats["shots"]))
-    surv = sum(u.current_hp for u in player_units) * 200
-    final_score = int((current_score * eff) + surv)
+    # Ensures final score calculation is a derivation of current_score
+    eff_multiplier = (player_stats["hits"] / max(1, player_stats["shots"]))
+    survival_bonus = sum(u.current_hp for u in player_units) * 200
+    final_score = int((current_score * eff_multiplier * survival_bonus)/300)  # Balanced scaling for final score
 
 def add_log(side, action_type, message, is_hit=False):
     color = PLAYER_COLOR if side == "PLAYER" else (AI_COLOR if side == "AI" else WHITE)
@@ -247,6 +274,7 @@ def draw_panels(ai_thinking=False):
         t_col = PLAYER_COLOR if turn == "player" else AI_COLOR
         screen.blit(font.render(f"TURN: {turn.upper()}", True, t_col), (stats_x + 20, 60))
     
+    # Live score display
     screen.blit(font.render(f"SCORE: {current_score:06}", True, WHITE), (stats_x + 20, 80))
     
     if selected_unit:
@@ -313,7 +341,6 @@ def reset_game():
     admirals_log, turn, game_state, winner, current_score = [], "player", "PLAYING", None, 0
 
 def random_pause_thinking():
-    """Pauses the game with a thinking visual indicator for the AI."""
     start_time = time.time()
     duration = random.uniform(0.4, 0.9)
     while time.time() - start_time < duration:
@@ -347,6 +374,7 @@ def draw_game_elements(ai_thinking=False):
             if player_map[y][x] == 1: pygame.draw.rect(screen, (255, 120, 0), (x*CELL_SIZE + SIDE_PANEL_WIDTH+3, y*CELL_SIZE+3, 4, 4))
 
     for u in player_units + ai_units: u.draw(screen)
+    
     for fire in active_fires[:]:
         if not fire.update(): active_fires.remove(fire)
         else: fire.draw(screen)
@@ -460,14 +488,6 @@ while True:
             avail = [u for u in ai_units if not u.is_destroyed and u.cooldown == 0]
             if avail:
                 attacker = random.choice(avail)
-                # Randomly decide to move ship (30% chance)
-                if random.random() < 0.3:
-                    new_x, new_y = random.randint(0, GRID_SIZE-attacker.size), random.randint(1, 38)
-                    attacker.update_geometry(new_x, new_y)
-                    if move_sound: move_sound.play()
-                    add_log("AI", "MOVE", f"{attacker.name} repositioned.")
-                    pygame.time.delay(500)
-
                 sfx_map = {"Corvette": shot_1_sound, "Frigate": shot_1_sound, "Destroyer": shot_2_sound, "Carrier": plane_sound}
                 attack_sfx = sfx_map.get(attacker.name)
                 if attack_sfx: attack_sfx.play()
@@ -499,11 +519,36 @@ while True:
     elif game_state == "GAME_OVER":
         screen.fill(BLACK)
         title_col = PLAYER_COLOR if winner == "PLAYER" else AI_COLOR
-        screen.blit(header_font.render(f"{winner} VICTORY", True, title_col), (WINDOW_WIDTH//2 - 100, WINDOW_HEIGHT//2 - 60))
-        screen.blit(font.render(f"FINAL MISSION SCORE: {final_score:06}", True, WHITE), (WINDOW_WIDTH//2 - 130, WINDOW_HEIGHT//2))
-        screen.blit(font.render("PRESS R TO RETURN TO HQ", True, (150, 150, 150)), (WINDOW_WIDTH//2 - 130, WINDOW_HEIGHT//2 + 40))
-        for event in events:
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_r: game_state = "WELCOME"
+        
+        # Header
+        screen.blit(header_font.render(f"{winner} VICTORY", True, title_col), (WINDOW_WIDTH//2 - 100, WINDOW_HEIGHT//2 - 120))
+        
+        # Itemized Scoring breakdown
+        eff = (player_stats["hits"] / max(1, player_stats["shots"]))
+        surv_points = sum(u.current_hp for u in player_units) * 200
+        
+        score_items = [
+            "[ FORMULA: (BASE COMBAST SCORE * MISSION ACCURACY * FLEET SURVIVAL) / 300 ]",
+            f"-------------------------------",
+            f"BASE COMBAT SCORE:  {current_score:06}",
+            f"MISSION ACCURACY:   {eff*100:.1f}%",
+            f"FLEET SURVIVAL:     {surv_points:06}",
+            "-------------------------------",
+            f"FINAL TOTAL SCORE:  {final_score:06}"
+        ]
+        
+        item_y = WINDOW_HEIGHT // 2 - 40
+        for i, line in enumerate(score_items):
+            # Highlight the total score in the list
+            col = GLOW_COLOR if "TOTAL" in line else WHITE
+            screen.blit(font.render(line, True, col), (WINDOW_WIDTH//2 - 130, item_y + (i * 25)))
 
+        # Footer Instruction
+        screen.blit(font.render("PRESS R TO RETURN TO HQ", True, (150, 150, 150)), (WINDOW_WIDTH//2 - 110, item_y + 165))
+        
+        for event in events:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_r: 
+                game_state = "WELCOME"
+                
     pygame.display.flip()
     clock.tick(FPS)
