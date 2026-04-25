@@ -1,5 +1,7 @@
 # Sinkers 1945: Strategic Intel
 
+![image](https://github.com/mcflj0911/sinkers_1945/blob/main/doodads/splash.png)
+
 **Sinkers 1945** is a high-fidelity, retro-styled naval strategy game built with Python and Pygame. It evolves the classic "Battleship" formula by adding unit-specific abilities, cooldown management, and an AI that features reactive tactical logic and "thinking" simulations.
 
 ## 🚢 Fleet Intelligence & Attack Patterns
