@@ -16,9 +16,16 @@ WINDOW_WIDTH = BOARD_SIZE + (SIDE_PANEL_WIDTH * 2)
 WINDOW_HEIGHT = BOARD_SIZE
 FPS = 60
 
-# Weather Constants for Intel Panel
+# --- Intel Panel Dimensions ---
+INTEL_W = 260  # Width of the ship images
+INTEL_H = 180  # Height of each individual ship image
+INTEL_GAP = 10 # Gap between the two images
+INTEL_TOTAL_H = (INTEL_H * 2) + INTEL_GAP # Total height for the rain/lightning area
+
+# Weather Constants
 INTEL_RAIN_COLOR = (100, 100, 120, 150)
-intel_rain_drops = [[random.randint(0, 260), random.randint(0, 180)] for _ in range(50)]
+# Initialize rain drops based on the dynamic width and total height
+intel_rain_drops = [[random.randint(0, INTEL_W), random.randint(0, INTEL_TOTAL_H)] for _ in range(50)]
 last_lightning_time = 0
 lightning_alpha = 0
 
@@ -89,6 +96,10 @@ if os.path.exists(music_path):
         pass
 
 splash_img = load_image("splash.png", (WINDOW_WIDTH, WINDOW_HEIGHT))
+# --- Load End Game Backgrounds ---
+ai_win_img = load_image("AI_win.png", (WINDOW_WIDTH, WINDOW_HEIGHT))
+player_win_img = load_image("Player_win.png", (WINDOW_WIDTH, WINDOW_HEIGHT))
+
 header_font = pygame.font.SysFont("Consolas", 22, bold=True)
 font = pygame.font.SysFont("Consolas", 14, bold=True)
 log_font = pygame.font.SysFont("Consolas", 13)
@@ -129,6 +140,7 @@ class SHDSonarPulse:
         # Draw a faint inner ring for depth
         if self.radius > 10:
             pygame.draw.circle(surface, (255, 120, 0, alpha // 2), (self.x, self.y), int(self.radius - 8), 1)
+
 
 class TacticalCloud:
     def __init__(self, side="player"):
@@ -314,8 +326,8 @@ class Unit:
                         elif self.name == "Destroyer" and i in [1, 3]:
                             for off in [-3, 0, 3]:
                                 start_pos = (
-                                draw_rect.centerx + off, draw_rect.centery) if self.orientation == "V" else (
-                                draw_rect.centerx, draw_rect.centery + off)
+                                    draw_rect.centerx + off, draw_rect.centery) if self.orientation == "V" else (
+                                    draw_rect.centerx, draw_rect.centery + off)
                                 self._draw_battery(surface, start_pos, gun_tip_offset, gun_col)
                     elif detail == "deck":
                         pygame.draw.rect(surface, (100, 100, 100), draw_rect.inflate(-4, -4))
@@ -405,7 +417,7 @@ def add_log(side, action_type, message, is_hit=False):
             current_line = [word]
     lines.append(' '.join(current_line))
     for line in lines: admirals_log.append({"msg": line, "hit": is_hit, "color": color})
-    admirals_log.append({"msg":"[//"+str(datetime.now().isoformat())+"//]","hit": False, "color": color})
+    admirals_log.append({"msg": "[//" + str(datetime.now().isoformat()) + "//]", "hit": False, "color": color})
     admirals_log.append({"msg": "                                    ", "hit": False, "color": color})
     if len(admirals_log) > 40: admirals_log.pop(0)
 
@@ -488,8 +500,8 @@ def draw_panels(ai_thinking=False):
         py = random.randint(100, WINDOW_HEIGHT - 100)
         log_pulses.append(SHDSonarPulse(px, py))
         # Play sonar sound if available
-        #if sonar_sound:
-            #sonar_sound.play()
+        # if sonar_sound:
+        # sonar_sound.play()
         next_pulse_time = current_time + random.randint(3000, 8000)
 
     # Create a surface for alpha blending pulses
@@ -507,9 +519,11 @@ def draw_panels(ai_thinking=False):
         y_off -= 18
         if y_off < 60: break
 
-    stats_x = SIDE_PANEL_WIDTH + BOARD_SIZE
+    stats_x = SIDE_PANEL_WIDTH + BOARD_SIZE  # This defines the start of the right panel
     pygame.draw.rect(screen, PANEL_BG, (stats_x, 0, SIDE_PANEL_WIDTH, WINDOW_HEIGHT))
     pygame.draw.line(screen, WHITE, (stats_x, 0), (stats_x, WINDOW_HEIGHT), 2)
+
+    # Put your specific layout elements here
     screen.blit(header_font.render("FLEET INTEL", True, GLOW_COLOR), (stats_x + 20, 20))
 
     if ai_thinking:
@@ -553,42 +567,42 @@ def draw_panels(ai_thinking=False):
                     (stats_x + 25, curr_y))
         curr_y += 16
 
-    if ship_intel_img:
+    # --- Revamped Fleet Intel Display ---
+    current_display_img = get_current_intel_image()
+    if current_display_img:
         stats_x = SIDE_PANEL_WIDTH + BOARD_SIZE
         img_x = stats_x + 20
 
-        # Position ship_intel_img at the bottom
-        img_y_bottom = WINDOW_HEIGHT - 200
-        # Position ship_intel_img2 directly above it
-        img_y_top = img_y_bottom - 190
+        # Calculate Y positions dynamically
+        img_y_bottom = WINDOW_HEIGHT - (INTEL_H + 20)
+        img_y_top = img_y_bottom - (INTEL_H + INTEL_GAP)
+        screen.blit(current_display_img, (img_x, img_y_bottom))
 
-        # Draw ship2.png if it exists
-        if ship_intel_img2:
-            screen.blit(ship_intel_img2, (img_x, img_y_top))
-
-        # Draw original ship.png
-        screen.blit(ship_intel_img, (img_x, img_y_bottom))
-
+        # --- Weather Overlay (Lightning/Rain) ---
         # --- Weather Overlay (Lightning/Rain) ---
         if time.time() - last_lightning_time > random.uniform(3.0, 7.0):
             lightning_alpha, last_lightning_time = 180, time.time()
-
+        # --- Updated drawing logic in draw_panels ---
         if lightning_alpha > 0:
-            # Create a flash surface that covers both images
-            flash_surf = pygame.Surface((260, 370), pygame.SRCALPHA)
+            # Surface size adjusted to single ship (INTEL_W, INTEL_H)
+            flash_surf = pygame.Surface((INTEL_W, INTEL_H), pygame.SRCALPHA)
             flash_surf.fill((200, 220, 255, int(lightning_alpha)))
-            screen.blit(flash_surf, (img_x, img_y_top))
+            # Blit moved to bottom ship position
+            screen.blit(flash_surf, (img_x, img_y_bottom))
             lightning_alpha *= 0.85
 
-        # Rain overlay for the entire intel stack
-        rain_surf = pygame.Surface((260, 370), pygame.SRCALPHA)
+        # Rain surface size adjusted to single ship
+        rain_surf = pygame.Surface((INTEL_W, INTEL_H), pygame.SRCALPHA)
         for drop in intel_rain_drops:
             drop[1] += 12
             drop[0] -= 2
-            if drop[1] > 370:  # Reset height for the taller area
-                drop[1], drop[0] = random.randint(-20, 0), random.randint(0, 260)
+            # Reset height adjusted to INTEL_H
+            if drop[1] > INTEL_H:
+                drop[1], drop[0] = random.randint(-20, 0), random.randint(0, INTEL_W)
             pygame.draw.line(rain_surf, INTEL_RAIN_COLOR, (drop[0], drop[1]), (drop[0] - 1, drop[1] + 5), 1)
-        screen.blit(rain_surf, (img_x, img_y_top))
+        # Blit moved to bottom ship position
+        screen.blit(rain_surf, (img_x, img_y_bottom))
+
 def reset_game():
     global active_clouds, active_wind, player_units, ai_units, ai_fog, player_map, player_stats, ai_stats, admirals_log, turn, game_state, selected_unit, winner, active_fires, active_smoke, current_score
     active_wind = [WindParticle() for _ in range(25)]
@@ -672,7 +686,6 @@ def draw_game_elements(ai_thinking=False):
     screen.blit(grid_overlay, (SIDE_PANEL_WIDTH, 0))
     # -----------------------------------------------
 
-
     for wind in active_wind: wind.update(); wind.draw(screen)
     for cloud in active_clouds: cloud.update(); cloud.draw(screen)
     for u in player_units + ai_units:
@@ -754,17 +767,43 @@ ai_fog = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
 player_map = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
 active_fires, active_smoke, active_wind, active_clouds, active_trails = [], [], [], [], []
 ai_water_offset, player_water_offset = 0, 0
-ship_intel_img = load_image("ship.png", (260, 180))
-ship_intel_img2 = load_image("ship2.png", (260, 180)) # Add this line
+ship_intel_img = load_image("ship.png", (INTEL_W, INTEL_H))
+ship_intel_img2 = load_image("ship2.png", (INTEL_W, INTEL_H))  # Add this line
+
+# --- Load New Asset Images ---
+ASSET_IMAGES = {
+    "AI": load_image("AI_avatar.png", (INTEL_W, INTEL_H)),
+    "Scout": load_image("scout.png", (INTEL_W, INTEL_H)),
+    "Corvette": load_image("corvette.png", (INTEL_W, INTEL_H)),
+    "Frigate": load_image("frigate.png", (INTEL_W, INTEL_H)),
+    "Destroyer": load_image("destroyer.png", (INTEL_W, INTEL_H)),
+    "Carrier": load_image("carrier.png", (INTEL_W, INTEL_H))
+}
+
+
+def get_current_intel_image():
+    # 1. Check if it is AI's turn
+    if turn == "ai":
+        return ASSET_IMAGES.get("AI")
+
+    # 2. Check if a player unit is selected
+    if selected_unit:
+        return ASSET_IMAGES.get(selected_unit.name)
+
+    # Fallback to the original generic ship image
+    return ship_intel_img
+
+
 log_pulses = []
 next_pulse_time = 0
 # Variables for the random sweep logic
-log_sweep_y = -10.0      # Current vertical position (starts off-screen)
-log_sweep_speed = 5.0    # Pixels per frame
+log_sweep_y = -10.0  # Current vertical position (starts off-screen)
+log_sweep_speed = 5.0  # Pixels per frame
 log_next_sweep_time = 0  # When the next sweep should start (in ms)
 
-
 start_btn = pygame.Rect(WINDOW_WIDTH // 2 - 100, WINDOW_HEIGHT // 2 + 70, 200, 60)
+
+
 def calculate_final_score():
     global final_score
     # Avoid division by zero and calculate accuracy
@@ -773,6 +812,7 @@ def calculate_final_score():
     survival_bonus = sum(u.current_hp for u in player_units) * 200
     # Final formula: (Combat Points * Accuracy * Survival) / 300
     final_score = int((current_score * eff_multiplier * survival_bonus) / 300)
+
 
 while True:
     events = pygame.event.get()
@@ -862,9 +902,9 @@ while True:
                         fresh_strike = True
                     elif selected_unit.name == "Carrier":
                         active_trails.append({"type": "FLIGHT", "start": source_pos, "end": (
-                        (mx + 0.5) * CELL_SIZE + SIDE_PANEL_WIDTH, (my + 0.5) * CELL_SIZE), "control": (
-                        (mx + 0.5) * CELL_SIZE + SIDE_PANEL_WIDTH + random.randint(-100, 100),
-                        (source_pos[1] + (my + 0.5) * CELL_SIZE) // 2), "time": time.time()})
+                            (mx + 0.5) * CELL_SIZE + SIDE_PANEL_WIDTH, (my + 0.5) * CELL_SIZE), "control": (
+                            (mx + 0.5) * CELL_SIZE + SIDE_PANEL_WIDTH + random.randint(-100, 100),
+                            (source_pos[1] + (my + 0.5) * CELL_SIZE) // 2), "time": time.time()})
                         for dy in range(2):
                             for dx in range(2):
                                 if 0 <= mx + dx < GRID_SIZE and 0 <= my + dy < 40:
@@ -934,6 +974,20 @@ while True:
 
     elif game_state == "GAME_OVER":
         screen.fill(BLACK)
+
+        # --- DRAW WIN BACKGROUND ---
+        if winner == "PLAYER" and player_win_img:
+            screen.blit(player_win_img, (0, 0))
+        elif winner == "AI" and ai_win_img:
+            screen.blit(ai_win_img, (0, 0))
+        # ---------------------------
+
+        # Optional: Dimmer overlay for text readability
+        dimmer = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+        dimmer.fill((0, 0, 0, 150))  # Adjust 150 (0-255) for darkness
+        screen.blit(dimmer, (0, 0))
+
+
         title_col = PLAYER_COLOR if winner == "PLAYER" else AI_COLOR
         header_surf = header_font.render(f"{winner} VICTORY", True, title_col)
         screen.blit(header_surf, (WINDOW_WIDTH // 2 - header_surf.get_width() // 2, WINDOW_HEIGHT // 2 - 140))
