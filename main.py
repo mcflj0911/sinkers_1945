@@ -351,10 +351,6 @@ def fire_at(tx, ty, targets, side_firing, source_pos=None, ignore_evasion=False)
     global player_stats, ai_stats, active_fires, current_score, active_trails
     stats = player_stats if side_firing == "PLAYER" else ai_stats
 
-    if side_firing == "PLAYER" and source_pos:
-        active_trails.append({"start": source_pos, "end": (tx * CELL_SIZE + SIDE_PANEL_WIDTH + 5, ty * CELL_SIZE + 5),
-                              "time": time.time()})
-
     for unit in targets:
         if (tx, ty) in unit.grid_pos:
             idx = unit.grid_pos.index((tx, ty))
@@ -603,36 +599,48 @@ def draw_panels(ai_thinking=False):
         # Blit moved to bottom ship position
         screen.blit(rain_surf, (img_x, img_y_bottom))
 
-def reset_game():
-    global active_clouds, active_wind, player_units, ai_units, ai_fog, player_map, player_stats, ai_stats, admirals_log, turn, game_state, selected_unit, winner, active_fires, active_smoke, current_score
+
+def reset_game(num_enemies=5):  # Default to easy
+    global active_clouds, active_wind, player_units, ai_units, ai_fog, player_map, player_stats, ai_stats, admirals_log, turn, game_state, selected_unit, winner, active_fires, active_smoke, current_score, shot_queue
+    shot_queue = []  # Ensure queue is cleared
     active_wind = [WindParticle() for _ in range(25)]
     active_clouds = [TacticalCloud(side="ai") for _ in range(6)] + [TacticalCloud(side="player") for _ in range(6)]
+
     pool = [("Scout", 1, 0.0, 1), ("Corvette", 2, 0.4, 1), ("Frigate", 3, 0.2, 2), ("Destroyer", 4, 0.15, 1),
             ("Carrier", 5, 0.08, 5)]
     player_units, ai_units, active_fires, active_smoke = [], [], [], []
-    for side, y_bounds in [("ai", (1, 38)), ("player", (41, 78))]:
-        occ = set()
-        selection = pool if side == "player" else [random.choice(pool) for _ in range(5)]
-        for name, size, eva, ammo in selection:
-            placed = False
-            while not placed:
-                ori = random.choice(["H", "V"])
-                mx, my = GRID_SIZE - (size if ori == "H" else 1), y_bounds[1] - (size if ori == "V" else 0)
-                sx, sy = random.randint(0, mx), random.randint(y_bounds[0], my)
-                cells = [(sx + i, sy) if ori == "H" else (sx, sy + i) for i in range(size)]
-                if not any(c in occ for c in cells):
-                    u = Unit(name, size, sx, sy, ori, side, eva, ammo)
-                    if side == "ai":
-                        ai_units.append(u)
-                    else:
-                        player_units.append(u)
-                    occ.update(cells);
-                    placed = True
+
+    # Place Player (Always 5 units)
+    occ = set()
+    for name, size, eva, ammo in pool:
+        placed = False
+        while not placed:
+            ori = random.choice(["H", "V"])
+            sx, sy = random.randint(0, GRID_SIZE - size), random.randint(41, 78 - size)
+            cells = [(sx + i, sy) if ori == "H" else (sx, sy + i) for i in range(size)]
+            if not any(c in occ for c in cells):
+                player_units.append(Unit(name, size, sx, sy, ori, "player", eva, ammo))
+                occ.update(cells)
+                placed = True
+
+    # Place AI (Based on Difficulty)
+    occ_ai = set()
+    for _ in range(num_enemies):
+        name, size, eva, ammo = random.choice(pool)
+        placed = False
+        while not placed:
+            ori = random.choice(["H", "V"])
+            sx, sy = random.randint(0, GRID_SIZE - size), random.randint(1, 38 - size)
+            cells = [(sx + i, sy) if ori == "H" else (sx, sy + i) for i in range(size)]
+            if not any(c in occ_ai for c in cells):
+                ai_units.append(Unit(name, size, sx, sy, ori, "ai", eva, ammo))
+                occ_ai.update(cells)
+                placed = True
+
     ai_fog = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
     player_map = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
     player_stats, ai_stats = {"shots": 0, "hits": 0}, {"shots": 0, "hits": 0}
     admirals_log, turn, game_state, winner, current_score = [], "player", "PLAYING", None, 0
-
 
 def get_bezier(p0, p1, p2, t):
     return ((1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t ** 2 * p2[0],
@@ -769,6 +777,9 @@ active_fires, active_smoke, active_wind, active_clouds, active_trails = [], [], 
 ai_water_offset, player_water_offset = 0, 0
 ship_intel_img = load_image("ship.png", (INTEL_W, INTEL_H))
 ship_intel_img2 = load_image("ship2.png", (INTEL_W, INTEL_H))  # Add this line
+shot_queue = []
+next_shot_time = 0
+
 
 # --- Load New Asset Images ---
 ASSET_IMAGES = {
@@ -801,8 +812,15 @@ log_sweep_y = -10.0  # Current vertical position (starts off-screen)
 log_sweep_speed = 5.0  # Pixels per frame
 log_next_sweep_time = 0  # When the next sweep should start (in ms)
 
-start_btn = pygame.Rect(WINDOW_WIDTH // 2 - 100, WINDOW_HEIGHT // 2 + 70, 200, 60)
-
+difficulty = "EASY"  # Default
+tier_y_base = WINDOW_HEIGHT // 2 + 50  # Lowered from original center
+tier_buttons = {
+    "EASY": pygame.Rect(WINDOW_WIDTH // 2 - 160, tier_y_base, 100, 40),
+    "MEDIUM": pygame.Rect(WINDOW_WIDTH // 2 - 50, tier_y_base, 100, 40),
+    "HARD": pygame.Rect(WINDOW_WIDTH // 2 + 60, tier_y_base, 100, 40)
+}
+# Start button now follows the tier buttons with a 70px gap
+start_btn = pygame.Rect(WINDOW_WIDTH // 2 - 100, tier_y_base + 70, 200, 60)
 
 def calculate_final_score():
     global final_score
@@ -820,16 +838,72 @@ while True:
         if event.type == pygame.QUIT: pygame.quit(); sys.exit()
     if game_state == "WELCOME":
         screen.fill(BLACK)
-        if splash_img: screen.blit(splash_img, (0, 0))
+        if splash_img:
+            screen.blit(splash_img, (0, 0))
+
+        # Optional: Difficulty Label
+        label = font.render("MISSION INTENSITY:", True, (180, 180, 180))
+        screen.blit(label, (WINDOW_WIDTH // 2 - label.get_width() // 2, tier_y_base - 30))
+
+        # Draw Tier Buttons
+        for tier, rect in tier_buttons.items():
+            is_selected = (difficulty == tier)
+            # Glow effect for selected tier
+            btn_col = PLAYER_COLOR if is_selected else (30, 30, 35)
+            pygame.draw.rect(screen, btn_col, rect, border_radius=5)
+            pygame.draw.rect(screen, WHITE if is_selected else (100, 100, 100), rect, 1, border_radius=5)
+
+            txt_col = WHITE if is_selected else (150, 150, 150)
+            txt = font.render(tier, True, txt_col)
+            screen.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
+
+        # Start Button with Hover Effect
         s_hover = start_btn.collidepoint(pygame.mouse.get_pos())
-        pygame.draw.rect(screen, PLAYER_COLOR if s_hover else (0, 150, 80), start_btn, border_radius=8)
+        s_col = (0, 200, 100) if s_hover else (0, 150, 80)
+        pygame.draw.rect(screen, s_col, start_btn, border_radius=8)
+
+        # Draw a thin border for the start button
+        pygame.draw.rect(screen, WHITE, start_btn, 1, border_radius=8)
+
         btn_text = header_font.render("START MISSION", True, WHITE)
         screen.blit(btn_text,
                     (start_btn.centerx - btn_text.get_width() // 2, start_btn.centery - btn_text.get_height() // 2))
+
+        # Interaction handling inside the 'for event in events:' loop
         for event in events:
-            if event.type == pygame.MOUSEBUTTONDOWN and start_btn.collidepoint(event.pos):
-                if start_sound: start_sound.play(); reset_game()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                for tier, rect in tier_buttons.items():
+                    if rect.collidepoint(event.pos):
+                        difficulty = tier
+                        if move_sound: move_sound.play()
+
+                if start_btn.collidepoint(event.pos):
+                    count = {"EASY": 5, "MEDIUM": 8, "HARD": 12}[difficulty]
+                    if start_sound: start_sound.play()
+                    reset_game(num_enemies=count)
+
     elif game_state == "PLAYING":
+        # --- Process Delayed Battery Shots ---
+        now = pygame.time.get_ticks()
+        if shot_queue and now >= next_shot_time:
+            s = shot_queue.pop(0)
+
+            # 1. Sound and Visuals
+            if s["sound"]: s["sound"].play()
+            active_trails.append(
+                {"start": s["source"], "end": (s["tx"] * CELL_SIZE + SIDE_PANEL_WIDTH + 5, s["ty"] * CELL_SIZE + 5),
+                 "time": time.time()})
+
+            # 2. Marking and Calculation
+            if s["side"] == "PLAYER":
+                ai_fog[s["ty"]][s["tx"]] = 2
+                res, u_name = fire_at(s["tx"], s["ty"], ai_units, "PLAYER",
+                                      ignore_evasion=(s["unit_name"] == "Corvette"))
+                if res != "ALREADY_HIT": log_attack_results("PLAYER", s["unit_name"], [(res, u_name)])
+
+            # 3. Random Realism Delay (0.2s - 0.6s)
+            next_shot_time = now + random.randint(200, 600)
+
         draw_game_elements()
         m_pos = pygame.mouse.get_pos()
         mx, my = (m_pos[0] - SIDE_PANEL_WIDTH) // CELL_SIZE, m_pos[1] // CELL_SIZE
@@ -880,47 +954,60 @@ while True:
                     selected_unit = clicked;
                     selected_unit.is_selected, shots_remaining = True, clicked.ammo_capacity
                 elif selected_unit and 0 <= mx < GRID_SIZE and 0 <= my < 40:
-                    source_pos, results, fresh_strike = selected_unit.rects[
-                        1 if selected_unit.size > 1 else 0].center, [], False
-                    if selected_unit.name == "Destroyer":
-                        strikes = random.sample([(mx + dx, my + dy) for dy in range(-1, 3) for dx in range(-1, 3) if
-                                                 0 <= mx + dx < GRID_SIZE and 0 <= my + dy < 40], 8)
-                        for sx, sy in strikes:
-                            res, u_name = fire_at(sx, sy, ai_units, "PLAYER", source_pos=source_pos)
-                            if res != "ALREADY_HIT": results.append((res, u_name)); fresh_strike = True
-                            ai_fog[sy][sx] = 2
-                    elif selected_unit.name == "Scout":
-                        add_log("PLAYER", "RECON", f"Launching sonar drone over sector ({mx},{my}).")
-                        if sonar_sound: sonar_sound.play()
-                        for ry in range(my - 8, my + 9):
-                            for rx in range(mx - 8, mx + 9):
-                                if 0 <= rx < GRID_SIZE and 0 <= ry < 40 and ((rx - mx) ** 2 + (ry - my) ** 2) <= 64:
-                                    if ai_fog[ry][rx] != 2: ai_fog[ry][rx] = 1
-                        active_trails.append(
-                            {"type": "SONAR", "center": (mx * CELL_SIZE + SIDE_PANEL_WIDTH + 5, my * CELL_SIZE + 5),
-                             "max_radius": 10 * CELL_SIZE, "time": time.time()})
+                    source_pos = selected_unit.rects[1 if selected_unit.size > 1 else 0].center
+                    results = []
+                    fresh_strike = False
+
+                    # Check if unit is a "Battery" type
+                    is_battery = selected_unit.name in ["Corvette", "Frigate", "Destroyer"]
+
+                    if is_battery:
+                        # Determine targets for the queue
+                        coords = []
+                        if selected_unit.name == "Destroyer":
+                            coords = random.sample([(mx + dx, my + dy) for dy in range(-1, 3) for dx in range(-1, 3)
+                                                    if 0 <= mx + dx < GRID_SIZE and 0 <= my + dy < 40], 8)
+                        else:  # Corvette/Frigate
+                            rad = 2 if selected_unit.name == "Frigate" else 1
+                            coords = [(mx + dx, my + dy) for dy in range(rad) for dx in range(rad)
+                                      if 0 <= mx + dx < GRID_SIZE and 0 <= my + dy < 40]
+
+                        # Add to sequential queue
+                        for cx, cy in coords:
+                            shot_queue.append({
+                                "tx": cx, "ty": cy, "source": source_pos, "side": "PLAYER",
+                                "unit_name": selected_unit.name,
+                                "sound": shot_1_sound if selected_unit.name != "Destroyer" else shot_2_sound
+                            })
                         fresh_strike = True
-                    elif selected_unit.name == "Carrier":
-                        active_trails.append({"type": "FLIGHT", "start": source_pos, "end": (
-                            (mx + 0.5) * CELL_SIZE + SIDE_PANEL_WIDTH, (my + 0.5) * CELL_SIZE), "control": (
-                            (mx + 0.5) * CELL_SIZE + SIDE_PANEL_WIDTH + random.randint(-100, 100),
-                            (source_pos[1] + (my + 0.5) * CELL_SIZE) // 2), "time": time.time()})
-                        for dy in range(2):
-                            for dx in range(2):
-                                if 0 <= mx + dx < GRID_SIZE and 0 <= my + dy < 40:
-                                    res, u_name = fire_at(mx + dx, my + dy, ai_units, "PLAYER", source_pos=None)
-                                    if res != "ALREADY_HIT": results.append((res, u_name)); fresh_strike = True
-                                    ai_fog[my + dy][mx + dx] = 2
-                    else:
-                        rad = 2 if selected_unit.name == "Frigate" else 1
-                        for dy in range(rad):
-                            for dx in range(rad):
-                                if 0 <= mx + dx < GRID_SIZE and 0 <= my + dy < 40:
-                                    res, u_name = fire_at(mx + dx, my + dy, ai_units, "PLAYER", source_pos=source_pos,
-                                                          ignore_evasion=(selected_unit.name == "Corvette"))
-                                    if res != "ALREADY_HIT": results.append((res, u_name)); fresh_strike = True
-                                    ai_fog[my + dy][mx + dx] = 2
-                    if results: log_attack_results("PLAYER", selected_unit.name, results)
+
+                    else:  # Scout and Carrier (Instant Resolution)
+                        if selected_unit.name == "Scout":
+                            if sonar_sound: sonar_sound.play()
+                            for ry in range(my - 8, my + 9):
+                                for rx in range(mx - 8, mx + 9):
+                                    if 0 <= rx < GRID_SIZE and 0 <= ry < 40 and ((rx - mx) ** 2 + (ry - my) ** 2) <= 64:
+                                        if ai_fog[ry][rx] != 2: ai_fog[ry][rx] = 1
+                            active_trails.append({"type": "SONAR", "center": (mx * CELL_SIZE + SIDE_PANEL_WIDTH + 5, my * CELL_SIZE + 5),
+                                                  "max_radius": 10 * CELL_SIZE, "time": time.time()})
+                            fresh_strike = True
+                        elif selected_unit.name == "Carrier":
+                            if plane_sound: plane_sound.play()
+                            active_trails.append({"type": "FLIGHT", "start": source_pos,
+                                                  "end": ((mx + 0.5) * CELL_SIZE + SIDE_PANEL_WIDTH, (my + 0.5) * CELL_SIZE), "control": (
+                                (mx + 0.5) * CELL_SIZE + SIDE_PANEL_WIDTH + random.randint(-100, 100),
+                                (source_pos[1] + (my + 0.5) * CELL_SIZE) // 2), "time": time.time()})
+                            for dy in range(2):
+                                for dx in range(2):
+                                    if 0 <= mx + dx < GRID_SIZE and 0 <= my + dy < 40:
+                                        res, u_name = fire_at(mx + dx, my + dy, ai_units, "PLAYER")
+                                        if res != "ALREADY_HIT": results.append((res, u_name)); fresh_strike = True
+                                        ai_fog[my + dy][mx + dx] = 2
+
+
+
+
+##############################################################
                     if fresh_strike:
                         sfx = {"Corvette": shot_1_sound, "Frigate": shot_1_sound, "Destroyer": shot_2_sound,
                                "Carrier": plane_sound}
