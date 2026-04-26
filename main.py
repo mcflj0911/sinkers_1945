@@ -123,7 +123,7 @@ class SHDSonarPulse:
     def draw(self, surface):
         alpha = max(0, int(self.life))
         # Classic SHD Orange: (255, 120, 0)
-        col = (255, 120, 0, alpha)
+        col = (0, 255, 80, alpha)
         # Draw main ring
         pygame.draw.circle(surface, col, (self.x, self.y), int(self.radius), 2)
         # Draw a faint inner ring for depth
@@ -441,9 +441,44 @@ def draw_tooltip(surface, text_lines, pos):
 
 def draw_panels(ai_thinking=False):
     global last_lightning_time, lightning_alpha, next_pulse_time
+    global log_sweep_y, log_next_sweep_time
     pygame.draw.rect(screen, PANEL_BG, (0, 0, SIDE_PANEL_WIDTH, WINDOW_HEIGHT))
     pygame.draw.line(screen, WHITE, (SIDE_PANEL_WIDTH, 0), (SIDE_PANEL_WIDTH, WINDOW_HEIGHT), 2)
+    stats_x = SIDE_PANEL_WIDTH + BOARD_SIZE
+    pygame.draw.rect(screen, PANEL_BG, (stats_x, 0, SIDE_PANEL_WIDTH, WINDOW_HEIGHT))
     screen.blit(header_font.render("ADMIRAL'S LOG", True, GLOW_COLOR), (20, 20))
+
+    # --- UPDATED: Dual Panel Sweep Logic ---
+    current_ticks = pygame.time.get_ticks()
+
+    # 1. Check if we should start a new sweep
+    if log_sweep_y < 0 and current_ticks >= log_next_sweep_time:
+        log_sweep_y = 0
+
+    # 2. If a sweep is currently active
+    if log_sweep_y >= 0:
+        # Create the line surface
+        s_line = pygame.Surface((SIDE_PANEL_WIDTH, 2), pygame.SRCALPHA)
+        flicker = random.randint(15, 35)
+        s_line.fill((0, 255, 100, flicker))
+
+        # DRAW TO ADMIRAL'S LOG (Left Side)
+        screen.blit(s_line, (0, int(log_sweep_y)))
+
+        # DRAW TO FLEET INTEL (Right Side)
+        # Position is SIDE_PANEL_WIDTH + BOARD_SIZE
+        intel_x_pos = SIDE_PANEL_WIDTH + BOARD_SIZE
+        screen.blit(s_line, (stats_x, int(log_sweep_y)))
+
+        # Move the line down uniformly
+        log_sweep_y += log_sweep_speed
+
+        # 3. Reset and set random delay (0.5s to 3s)
+        if log_sweep_y >= WINDOW_HEIGHT:
+            log_sweep_y = -10.0
+            delay = random.randint(500, 3000)
+            log_next_sweep_time = current_ticks + delay
+
     y_off = WINDOW_HEIGHT - 40
     current_time = pygame.time.get_ticks()
 
@@ -611,6 +646,33 @@ def draw_game_elements(ai_thinking=False):
                 pygame.Rect(0, BOARD_SIZE // 2, BOARD_SIZE, BOARD_SIZE // 2))
     screen.blit(water_map, (SIDE_PANEL_WIDTH + player_water_offset - BOARD_SIZE, BOARD_SIZE // 2),
                 pygame.Rect(0, BOARD_SIZE // 2, BOARD_SIZE, BOARD_SIZE // 2))
+
+    # --- UPDATED: Higher Visibility Grid Overlay ---
+    grid_overlay = pygame.Surface((BOARD_SIZE, BOARD_SIZE), pygame.SRCALPHA)
+
+    for i in range(0, GRID_SIZE + 1):
+        # Major sectors every 10 cells
+        is_major = (i % 10 == 0)
+
+        # INCREASED ALPHAS: 90 for major lines, 40 for minor lines
+        alpha = 90 if is_major else 40
+
+        # Brighter cyan for major, softer blue for minor
+        color = (0, 255, 255, alpha) if is_major else (180, 200, 255, alpha)
+
+        # Vertical and Horizontal lines
+        pygame.draw.line(grid_overlay, color, (i * CELL_SIZE, 0), (i * CELL_SIZE, BOARD_SIZE), 1)
+        pygame.draw.line(grid_overlay, color, (0, i * CELL_SIZE), (BOARD_SIZE, i * CELL_SIZE), 1)
+
+    # Intersection markers (increased alpha to 120 for a tactical pop)
+    for gy in range(0, GRID_SIZE + 1, 10):
+        for gx in range(0, GRID_SIZE + 1, 10):
+            pygame.draw.circle(grid_overlay, (0, 255, 255, 120), (gx * CELL_SIZE, gy * CELL_SIZE), 2)
+
+    screen.blit(grid_overlay, (SIDE_PANEL_WIDTH, 0))
+    # -----------------------------------------------
+
+
     for wind in active_wind: wind.update(); wind.draw(screen)
     for cloud in active_clouds: cloud.update(); cloud.draw(screen)
     for u in player_units + ai_units:
@@ -667,7 +729,7 @@ def draw_game_elements(ai_thinking=False):
         trail_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
         if trail.get("type") == "SONAR":
             rad = int(trail["max_radius"] * (age / 0.6))
-            pygame.draw.circle(trail_surf, (0, 255, 255, alpha), trail["center"], rad, 3)
+            pygame.draw.circle(trail_surf, (0, 255, 80, alpha), trail["center"], rad, 3)
         elif trail.get("type") == "FLIGHT":
             prog = age / 1.2
             t = prog * 2 if prog <= 0.5 else 2 - (prog * 2)
@@ -696,6 +758,10 @@ ship_intel_img = load_image("ship.png", (260, 180))
 ship_intel_img2 = load_image("ship2.png", (260, 180)) # Add this line
 log_pulses = []
 next_pulse_time = 0
+# Variables for the random sweep logic
+log_sweep_y = -10.0      # Current vertical position (starts off-screen)
+log_sweep_speed = 5.0    # Pixels per frame
+log_next_sweep_time = 0  # When the next sweep should start (in ms)
 
 
 start_btn = pygame.Rect(WINDOW_WIDTH // 2 - 100, WINDOW_HEIGHT // 2 + 70, 200, 60)
@@ -747,7 +813,7 @@ while True:
                                                                                             PREVIEW_COLOR, pygame.Rect(
                                 (mx + dx) * CELL_SIZE + SIDE_PANEL_WIDTH, (my + dy) * CELL_SIZE, CELL_SIZE, CELL_SIZE))
             elif selected_unit.name == "Scout":
-                pygame.draw.rect(preview_surface, (0, 255, 255, 40),
+                pygame.draw.rect(preview_surface, (0, 255, 80, 40),
                                  pygame.Rect((mx - 8) * CELL_SIZE + SIDE_PANEL_WIDTH, (my - 8) * CELL_SIZE,
                                              16 * CELL_SIZE, 16 * CELL_SIZE))
             else:
