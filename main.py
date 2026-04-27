@@ -287,108 +287,148 @@ class Unit:
 
         return base_evasion
 
+    def _draw_battery(self, surface, pos, tip_offset, color, turret_type="standard"):
+        cx, cy = pos
+        # 1. Draw Turret Base (The "Barbet")
+        base_size = 6 if turret_type == "heavy" else 4
+        pygame.draw.circle(surface, (30, 30, 35), (cx, cy), base_size)
+        pygame.draw.circle(surface, WHITE, (cx, cy), base_size, 1)
+
+        # 2. Draw Barrels
+        if turret_type == "single":
+            # Single barrel (Corvette/Frigate)
+            end_pos = (cx + tip_offset[0], cy + tip_offset[1])
+            pygame.draw.line(surface, WHITE, (cx, cy), end_pos, 2)
+        elif turret_type == "twin":
+            # Twin barrels (Destroyer)
+            for off in [-2, 2]:
+                start = (cx + off, cy) if tip_offset[1] != 0 else (cx, cy + off)
+                end = (start[0] + tip_offset[0], start[1] + tip_offset[1])
+                pygame.draw.line(surface, WHITE, start, end, 2)
+        elif turret_type == "triple":
+            # Triple barrels (Dreadnought)
+            for off in [-3, 0, 3]:
+                start = (cx + off, cy) if tip_offset[1] != 0 else (cx, cy + off)
+                end = (start[0] + tip_offset[0], start[1] + tip_offset[1])
+                pygame.draw.line(surface, (200, 200, 200), start, end, 2)
+
     def draw(self, surface):
         known = False
-        # Calculate a floating offset based on time
-        # 3.0 is the speed of the bobbing, 3.0 is the height (pixels)
         if not self.is_destroyed:
             bobbing_offset = math.sin(time.time() * 3.0 + (self.grid_pos[0][0] * 0.5)) * 3.0
         else:
-            bobbing_offset = 0  # Sunk ships rest still on the seabed/surface
+            bobbing_offset = 0
 
+        # 1. Calculate the bounds for the unified hull
         min_x = min(r.x for r in self.rects)
         max_x = max(r.right for r in self.rects)
+        min_y = min(r.y for r in self.rects)
         max_y = max(r.bottom for r in self.rects)
 
-        # Determine gun aim direction based on side
-        gun_tip_offset = (0, -8) if self.side == "player" else (0, 8)
+        # Check if any part of the ship is revealed or if it's the player's ship
+        is_visible = self.side == "player" or any(ai_fog[gp[1]][gp[0]] >= 1 or not self.health_map[idx]
+                                                  for idx, gp in enumerate(self.grid_pos))
 
-        for i, rect in enumerate(self.rects):
-            # Apply the wobble to a temporary rect for drawing
-            draw_rect = rect.copy()
-            draw_rect.y += bobbing_offset
+        if is_visible:
+            known = True
+            self.is_revealed = True
 
-            rev = ai_fog[self.grid_pos[i][1]][self.grid_pos[i][0]] >= 1 or not self.health_map[i]
-            if rev: self.is_revealed = True
+            # Determine Base Color
+            base_col = self.scheme["color"]
+            if self.side == "player" and self.cooldown > 0: base_col = COOLDOWN_GRAY
+            if self.is_destroyed:
+                base_col = DESTROYED_COLOR
+            elif self.is_selected:
+                base_col = GLOW_COLOR
 
-            if self.side == "player" or rev:
-                known = True
-                base_col = self.scheme["color"]
-                if self.side == "player" and self.cooldown > 0: base_col = COOLDOWN_GRAY
-                if not self.health_map[i]: base_col = (60, 20, 20) if self.side == "ai" else (50, 50, 50)
-                if self.is_destroyed: base_col = DESTROYED_COLOR
-                if self.is_selected: base_col = GLOW_COLOR
+            # --- STEP 1: DRAW HULL ---
+            ship_rect = pygame.Rect(min_x, min_y + bobbing_offset, max_x - min_x, max_y - min_y)
 
-                # --- Bow Logic ---
-                if i == 0 and self.name != "Scout":
-                    if self.orientation == "H":
-                        pts = [draw_rect.midleft, draw_rect.topright, draw_rect.bottomright]
-                    else:
-                        pts = [draw_rect.midtop, draw_rect.bottomleft, draw_rect.bottomright]
-                    pygame.draw.polygon(surface, base_col, pts)
-                    pygame.draw.polygon(surface, BLACK, pts, 1)
-                else:
-                    pygame.draw.rect(surface, base_col, draw_rect)
-                    pygame.draw.rect(surface, BLACK, draw_rect, 1)
-
-                # --- Gun Battery Logic ---
-                if not self.is_destroyed:
-                    detail = self.scheme["detail"]
-                    gun_col = (40, 40, 45)
-
-                    if detail == "battery":
-                        if self.name == "Corvette" and i == 1:
-                            self._draw_battery(surface, draw_rect.center, gun_tip_offset, gun_col)
-                        elif self.name == "Frigate" and i in [1, 2]:
-                            self._draw_battery(surface, draw_rect.center, gun_tip_offset, gun_col)
-                        elif self.name == "Destroyer" and i in [1, 3]:
-                            for off in [-3, 0, 3]:
-                                start_pos = (
-                                    draw_rect.centerx + off, draw_rect.centery) if self.orientation == "V" else (
-                                    draw_rect.centerx, draw_rect.centery + off)
-                                self._draw_battery(surface, start_pos, gun_tip_offset, gun_col)
-                    elif detail == "heavy_battery":
-                        # Draw 3 Triple-Turrets along the 6-length hull
-                        if i in [1, 3, 5]:
-                            for off in [-4, 0, 4]:
-                                # Corrected start_pos using draw_rect.centery
-                                start_pos = (
-                                draw_rect.centerx + off, draw_rect.centery) if self.orientation == "V" else (
-                                draw_rect.centerx, draw_rect.centery + off)
-                                self._draw_battery(surface, start_pos, gun_tip_offset, (20, 20, 20))
-                    elif detail == "deck":
-                        pygame.draw.rect(surface, (100, 100, 100), draw_rect.inflate(-4, -4))
-
-        if known:
-            # 1. Handle the Status Label (HP or [SUNK])
-            if not self.is_destroyed:
-                # Show HP if alive
-                status_surf = health_font.render(f"{self.current_hp}/{self.size}", True, WHITE)
+            if self.orientation == "H":
+                pts = [
+                    (ship_rect.right, ship_rect.centery),
+                    (ship_rect.right - 10, ship_rect.top),
+                    (ship_rect.left + 5, ship_rect.top),
+                    (ship_rect.left, ship_rect.centery),
+                    (ship_rect.left + 5, ship_rect.bottom),
+                    (ship_rect.right - 10, ship_rect.bottom)
+                ]
             else:
-                # Show [SUNK] if destroyed
-                status_surf = health_font.render("[SUNK]", True, (255, 50, 50))  # Red text for sunk
+                pts = [
+                    (ship_rect.centerx, ship_rect.top),
+                    (ship_rect.right, ship_rect.top + 10),
+                    (ship_rect.right, ship_rect.bottom - 5),
+                    (ship_rect.centerx, ship_rect.bottom),
+                    (ship_rect.left, ship_rect.bottom - 5),
+                    (ship_rect.left, ship_rect.top + 10)
+                ]
 
+            pygame.draw.polygon(surface, base_col, pts)
+            pygame.draw.polygon(surface, WHITE, pts, 1)
+            # --- NEW: CARRIER DECK MARKINGS ---
+            if self.name == "Carrier" and not self.is_destroyed:
+                # Draw the flight deck runway (a darker center strip)
+                runway_rect = ship_rect.inflate(-12, -4) if self.orientation == "V" else ship_rect.inflate(-4, -12)
+                pygame.draw.rect(surface, (40, 40, 45), runway_rect)
+
+                # Draw landing stripes
+                stripe_col = (200, 200, 200)
+                if self.orientation == "V":
+                    # Vertical dashed lines
+                    for y_off in range(10, int(runway_rect.height), 15):
+                        stripe = pygame.Rect(runway_rect.centerx - 1, runway_rect.top + y_off, 2, 8)
+                        pygame.draw.rect(surface, stripe_col, stripe)
+                    # Deck "Island" (Command Tower) on the side
+                    island = pygame.Rect(runway_rect.right - 2, runway_rect.centery - 10, 5, 20)
+                else:
+                    # Horizontal dashed lines
+                    for x_off in range(10, int(runway_rect.width), 15):
+                        stripe = pygame.Rect(runway_rect.left + x_off, runway_rect.centery - 1, 8, 2)
+                        pygame.draw.rect(surface, stripe_col, stripe)
+                    # Deck "Island" on the side
+                    island = pygame.Rect(runway_rect.centerx - 10, runway_rect.top - 2, 20, 5)
+
+                pygame.draw.rect(surface, (20, 20, 25), island)
+                pygame.draw.rect(surface, WHITE, island, 1)
+
+            # --- STEP 2: DRAW DAMAGE ---
+            for j, is_alive in enumerate(self.health_map):
+                if not is_alive:
+                    hit_rect = self.rects[j].copy()
+                    hit_rect.y += bobbing_offset
+                    pygame.draw.rect(surface, (60, 20, 20) if self.side == "ai" else (50, 50, 50),
+                                     hit_rect.inflate(-4, -4))
+
+            # --- STEP 3: DRAW TURRETS (Above everything else) ---
+            if not self.is_destroyed:
+                gun_col = (40, 40, 45)
+                gun_tip_offset = (0, -8) if self.side == "player" else (0, 8)
+
+                for i, rect in enumerate(self.rects):
+                    draw_rect = rect.copy()
+                    draw_rect.y += bobbing_offset
+
+                    # Logic for specific placements per ship type
+                    if self.name == "Corvette" and i == 1:
+                        self._draw_battery(surface, draw_rect.center, gun_tip_offset, gun_col, "single")
+                    elif self.name == "Frigate" and i in [0, 2]:
+                        self._draw_battery(surface, draw_rect.center, gun_tip_offset, gun_col, "single")
+                    elif self.name == "Destroyer" and i in [1, 3]:
+                        self._draw_battery(surface, draw_rect.center, gun_tip_offset, gun_col, "twin")
+                    elif self.name == "Dreadnought" and i in [1, 3, 5]:
+                        self._draw_battery(surface, draw_rect.center, gun_tip_offset, (20, 20, 20), "triple")
+
+        # --- STEP 4: UI LABELS ---
+        if known:
+            status_text = f"{self.current_hp}/{self.size}" if not self.is_destroyed else "[SUNK]"
+            status_col = WHITE if not self.is_destroyed else (255, 50, 50)
+            status_surf = health_font.render(status_text, True, status_col)
             surface.blit(status_surf, (self.rects[0].x, self.rects[0].y - 12 + bobbing_offset))
-            # 2. Always draw the Name Tag (Set to WHITE as requested)
-            name_tag = name_tag_font.render(self.name, True, WHITE)  # Changed from tuple to WHITE
 
-            text_x = min_x + (max_x - min_x) // 2 - name_tag.get_width() // 2
-            surface.blit(name_tag, (text_x, max_y + 2 + bobbing_offset))
-
-            # 2. Always draw the Name Tag
-            # Use a slightly darker color if sunk to differentiate
             text_color = (200, 200, 200) if not self.is_destroyed else (120, 120, 120)
             name_tag = name_tag_font.render(self.name, True, text_color)
-
             text_x = min_x + (max_x - min_x) // 2 - name_tag.get_width() // 2
             surface.blit(name_tag, (text_x, max_y + 2 + bobbing_offset))
-
-    def _draw_battery(self, surface, center, tip_offset, color):
-        end_pos = (center[0] + tip_offset[0], center[1] + tip_offset[1])
-        pygame.draw.line(surface, (150, 150, 150), center, end_pos, 2)
-        pygame.draw.circle(surface, color, center, 3)
-        pygame.draw.circle(surface, BLACK, center, 3, 1)
-
 
 def fire_at(tx, ty, targets, side_firing, source_pos=None, ignore_evasion=False):
     global player_stats, ai_stats, active_fires, current_score, active_trails
@@ -611,7 +651,7 @@ def draw_panels(ai_thinking=False):
     screen.blit(font.render(f"SCORE: {current_score:06}", True, WHITE), (stats_x + 20, 80))
     if selected_unit:
         pygame.draw.rect(screen, (40, 40, 50), (stats_x + 10, 105, SIDE_PANEL_WIDTH - 20, 45))
-        screen.blit(font.render(f"CMD: {selected_unit.name.upper()}", True, GLOW_COLOR), (stats_x + 20, 110))
+        screen.blit(font.render(f"SHIP: {selected_unit.name.upper()}", True, GLOW_COLOR), (stats_x + 20, 110))
         screen.blit(font.render(f"AMMO: {shots_remaining}", True, WHITE), (stats_x + 20, 130))
 
     curr_y = 170
@@ -1096,7 +1136,7 @@ while True:
             screen.blit(splash_img, (0, 0))
 
         # Optional: Difficulty Label
-        label = font.render("MISSION INTENSITY:", True, (180, 180, 180))
+        label = font.render(" ", True, (180, 180, 180))
         screen.blit(label, (WINDOW_WIDTH // 2 - label.get_width() // 2, tier_y_base - 30))
 
         # Draw Tier Buttons
@@ -1132,7 +1172,7 @@ while True:
                         if move_sound: move_sound.play()
 
                 if start_btn.collidepoint(event.pos):
-                    count = {"EASY": 5, "MEDIUM": 8, "HARD": 12}[difficulty]
+                    count = {"EASY": 5, "MEDIUM": 10, "HARD": 15}[difficulty]
                     if start_sound: start_sound.play()
                     reset_game(num_enemies=count)
 
@@ -1316,7 +1356,7 @@ while True:
             random_pause_thinking()
 
             # 1. Determine how many unique ships will attack this turn
-            attack_count = {"EASY": 1, "MEDIUM": 2, "HARD": 3}.get(difficulty, 1)
+            attack_count = {"EASY": 1, "MEDIUM": 4, "HARD": 8}.get(difficulty, 1)
 
             # 2. Get a list of all AI units that are still afloat and ready
             available_attackers = [u for u in ai_units if not u.is_destroyed and u.cooldown == 0]
