@@ -86,12 +86,18 @@ plane_sound = load_sound("plane.mp3")
 bell_sound = load_sound("bell.mp3")
 start_sound = load_sound("start.mp3")
 move_sound = load_sound("move.mp3")
+carrier_sound = load_sound("carrier.mp3")
+light_gun_sound = load_sound("light_gun.mp3")
+heavy_gun_sound = load_sound("heavy_gun.mp3")
+light_gun_sound_2 = load_sound("light_gun_2.mp3")
+heavy_gun_sound_2 = load_sound("heavy_gun_2.mp3")
+scout_sound = load_sound("scout.mp3")
 
 music_path = os.path.join(ASSET_DIR, "music.mp3")
 if os.path.exists(music_path):
     try:
         pygame.mixer.music.load(music_path)
-        pygame.mixer.music.set_volume(0.65)
+        pygame.mixer.music.set_volume(0.20)
         pygame.mixer.music.play(-1)
     except:
         pass
@@ -259,7 +265,6 @@ class Unit:
         # Dreadnought Passive: Ignores the first 2 hits
         self.heavy_armor = 2 if name == "Dreadnought" else 0
         self.update_geometry(x, y)
-
 
     def update_geometry(self, x, y):
         self.grid_pos = []
@@ -1125,6 +1130,15 @@ def calculate_final_score():
     # Final formula: (Combat Points * Accuracy * Survival) / 300
     final_score = int((current_score * eff_multiplier * survival_bonus) / 300)
 
+def get_unit_at(mx, my):
+    for unit in player_units + ai_units:
+        if not unit.is_destroyed:
+            # Check if any of the ship's segment rectangles contain the mouse point
+            for r in unit.rects:
+                if r.collidepoint(mx, my):
+                    return unit
+    return None
+
 
 while True:
     events = pygame.event.get()
@@ -1169,7 +1183,7 @@ while True:
                 for tier, rect in tier_buttons.items():
                     if rect.collidepoint(event.pos):
                         difficulty = tier
-                        if move_sound: move_sound.play()
+                        sonar_sound.play()
 
                 if start_btn.collidepoint(event.pos):
                     count = {"EASY": 5, "MEDIUM": 10, "HARD": 15}[difficulty]
@@ -1267,7 +1281,21 @@ while True:
             if event.type == pygame.MOUSEBUTTONDOWN and turn == "player":
                 clicked = next((u for u in player_units if any(r.collidepoint(m_pos) for r in u.rects)), None)
                 if clicked and not clicked.is_destroyed and clicked.cooldown == 0:
-                    if bell_sound: bell_sound.play()
+                    #if bell_sound: bell_sound.play()
+
+                    if clicked.name == "Carrier":
+                        if carrier_sound: carrier_sound.play()
+                    elif clicked.name == "Frigate":
+                        if light_gun_sound: light_gun_sound.play()
+                    elif clicked.name == "Corvette":
+                        if light_gun_sound_2: light_gun_sound_2.play()
+                    elif clicked.name == "Dreadnought":
+                        if heavy_gun_sound: heavy_gun_sound.play()
+                    elif clicked.name == "Destroyer":
+                            if heavy_gun_sound_2: heavy_gun_sound_2.play()
+                    else:
+                        if scout_sound: scout_sound.play()
+
                     if selected_unit: selected_unit.is_selected = False
                     selected_unit = clicked;
                     selected_unit.is_selected, shots_remaining = True, clicked.ammo_capacity
