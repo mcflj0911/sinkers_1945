@@ -277,6 +277,16 @@ class Unit:
     def is_destroyed(self):
         return self.current_hp == 0
 
+    def get_evasion(self):
+        base_evasion = self.evasion_stat  # Your base evasion value
+
+        # Check if the unit is a Carrier and is in the 'Ready' state
+        if self.unit_type == "CARRIER" and self.is_ready:
+            # Increase evasion by 30%
+            return base_evasion * 1.3
+
+        return base_evasion
+
     def draw(self, surface):
         known = False
         # Calculate a floating offset based on time
@@ -390,7 +400,16 @@ def fire_at(tx, ty, targets, side_firing, source_pos=None, ignore_evasion=False)
             if not unit.health_map[idx]: return "ALREADY_HIT", None
 
             stats["shots"] += 1
-            evaded = random.random() < unit.evasion if not ignore_evasion else False
+            # --- START PASSIVE IMPLEMENTATION ---
+            current_evasion = unit.evasion
+
+            # If the ship is a Carrier and is NOT on cooldown (cooldown <= 0)
+            if unit.name == "Carrier" and unit.cooldown <= 0:
+                # 30% increase to base evasion
+                current_evasion *= 1.30
+
+            evaded = random.random() < current_evasion if not ignore_evasion else False
+            # --- END PASSIVE IMPLEMENTATION ---
 
             if not evaded:
                 # DREADNOUGHT PASSIVE: Absorbs hits until armor is gone
@@ -839,6 +858,39 @@ def draw_game_elements(ai_thinking=False):
             screen.blit(radar_surf, (0, 0))
 
             if u.name == "Carrier":
+                if (time_ms // 500) % 2 == 0:
+                    # Position it slightly to the right of the ship's center
+                    shield_x = center_x + 12
+                    shield_y = center_y - 8
+                    shield_w, shield_h = 10, 12
+                    shield_col = (0, 200, 255)  # Tactical Cyan/Blue
+
+                    # 1. Main Shield Plate (Top rectangular part)
+                    pygame.draw.rect(screen, shield_col, (shield_x, shield_y, shield_w, shield_h - 4))
+
+                    # 2. Shield Point (The bottom triangle/V-shape)
+                    pygame.draw.polygon(screen, shield_col, [
+                        (shield_x, shield_y + shield_h - 4),
+                        (shield_x + shield_w, shield_y + shield_h - 4),
+                        (shield_x + (shield_w // 2), shield_y + shield_h)
+                    ])
+
+                    # 3. Inner Detail (Cross or highlight)
+                    # Small white vertical line
+                    pygame.draw.line(screen, WHITE, (shield_x + (shield_w // 2), shield_y + 2),
+                                     (shield_x + (shield_w // 2), shield_y + shield_h - 4), 1)
+                    # Small white horizontal line
+                    pygame.draw.line(screen, WHITE, (shield_x + 2, shield_y + 4),
+                                     (shield_x + shield_w - 2, shield_y + 4), 1)
+
+                    # 4. Shield Outline
+                    pygame.draw.polygon(screen, WHITE, [
+                        (shield_x, shield_y), (shield_x + shield_w, shield_y),
+                        (shield_x + shield_w, shield_y + shield_h - 4),
+                        (shield_x + (shield_w // 2), shield_y + shield_h),
+                        (shield_x, shield_y + shield_h - 4)
+                    ], 1)
+
                 # Loop to create 5 distinct planes
                 for i in range(5):
                     # 1. Give each plane a unique time offset so they aren't stacked
