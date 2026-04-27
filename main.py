@@ -610,6 +610,12 @@ def reset_game(num_enemies=5):  # Default to easy
             ("Carrier", 5, 0.08, 5)]
     player_units, ai_units, active_fires, active_smoke = [], [], [], []
 
+    cooldown_values = {
+        "Frigate": 2,
+        "Destroyer": 4,
+        "Carrier": 6
+    }
+
     # Place Player (Always 5 units)
     occ = set()
     for name, size, eva, ammo in pool:
@@ -642,6 +648,9 @@ def reset_game(num_enemies=5):  # Default to easy
                 occ_ai.update(cells)
                 placed = True
             attempts += 1
+    for u in player_units + ai_units:
+        u.cooldown = cooldown_values.get(u.name, 0)
+
     print(f"DEBUG: Spawned {len(ai_units)} AI ships.")
 
     ai_fog = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
@@ -729,6 +738,89 @@ def draw_game_elements(ai_thinking=False):
             if player_map[y][x] == 1: pygame.draw.rect(screen, (255, 120, 0),
                                                        (x * CELL_SIZE + SIDE_PANEL_WIDTH + 3, y * CELL_SIZE + 3, 4, 4))
     for u in player_units + ai_units: u.draw(screen)
+    # --- ADD STARTING HERE (approx Line 698) ---
+    time_ms = pygame.time.get_ticks()
+    for u in player_units:
+        if u.cooldown == 0 and not u.is_destroyed:
+            # Calculate center of the unit
+            mid_rect = u.rects[len(u.rects) // 2]
+            center_x, center_y = mid_rect.center
+            # --- 360 Degree Continuous Sweep (5 blocks long) ---
+            # 5 blocks * 10 pixels = 50 pixels length
+            radar_range = 30
+
+            # Rotation speed (0.05 for that slow, deliberate feel)
+            rotation_angle = (time_ms * 0.05) % 360
+            rad_angle = math.radians(rotation_angle)
+
+            # Create surface for transparency
+            radar_surf = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+
+            # 1. Draw a faint 360-degree background circle (The radar "field")
+            pygame.draw.circle(radar_surf, (0, 80, 0, 40), (center_x, center_y), radar_range)
+
+            # 2. Calculate the end point for the 360-degree sweeping line
+            end_x = center_x + radar_range * math.cos(rad_angle)
+            end_y = center_y + radar_range * math.sin(rad_angle)
+
+            # 3. Draw the bright sweep line
+            pygame.draw.line(radar_surf, (100, 255, 100, 255), (center_x, center_y), (end_x, end_y), 2)
+
+            # 4. Optional: Draw a subtle outer ring
+            pygame.draw.circle(radar_surf, (100, 255, 100, 100), (center_x, center_y), radar_range, 1)
+            screen.blit(radar_surf, (0, 0))
+
+            if u.name == "Carrier":
+                # Loop to create 5 distinct planes
+                for i in range(5):
+                    # 1. Give each plane a unique time offset so they aren't stacked
+                    # We multiply the index (i) by a large number to 'stagger' them
+                    t = (time_ms * 0.002) + (i * 1.5)
+
+                    # 2. Slightly vary the width and height for each plane
+                    # so some fly wider/taller than others
+                    width = 30 + (i * 5)
+                    height = 15 + (i * 3)
+
+                    off_x = math.sin(t) * width
+                    off_y = math.sin(t * 2) * height
+
+                    # 3. Draw the plane
+                    p_pos = (center_x + int(off_x), center_y + int(off_y))
+                    pygame.draw.circle(screen, (200, 200, 200), p_pos, 2)
+                    pygame.draw.line(screen, WHITE, (p_pos[0] - 3, p_pos[1]), (p_pos[0] + 3, p_pos[1]), 1)
+
+
+            elif u.name in ["Frigate", "Destroyer", "Corvette"]:
+                # --- Blinking Ammo Icon beside the unit ---
+                # Pulse every 500ms
+                if (time_ms // 500) % 2 == 0:
+                    # Position it slightly to the right of the ship's center
+                    ammo_x = center_x + 12
+                    ammo_y = center_y - 8
+
+                    # Draw a simple "Bullet/Shell" shape
+                    # Body of the shell
+                    pygame.draw.rect(screen, (255, 215, 0), (ammo_x, ammo_y, 6, 10))
+
+                    # Tip of the shell (Triangle)
+                    pygame.draw.polygon(screen, (255, 215, 0), [
+                        (ammo_x, ammo_y),
+                        (ammo_x + 6, ammo_y),
+                        (ammo_x + 3, ammo_y - 4)
+                    ])
+                    # Small white highlight to make it look metallic
+                    pygame.draw.line(screen, WHITE, (ammo_x + 1, ammo_y + 2), (ammo_x + 1, ammo_y + 8), 1)
+
+            elif u.name == "Scout":
+                # Radar Pulse Logic
+                radius = (time_ms // 15) % 40
+                alpha = max(0, 255 - (radius * 6))
+                radar_surf = pygame.Surface((80, 80), pygame.SRCALPHA)
+                pygame.draw.circle(radar_surf, (0, 255, 0, alpha), (40, 40), radius, 2)
+                screen.blit(radar_surf, (center_x - 40, center_y - 40))
+    # --- END OF ADDITION ---
+
     for smoke in active_smoke[:]:
         if not smoke.update():
             active_smoke.remove(smoke)
@@ -890,6 +982,9 @@ while True:
                     reset_game(num_enemies=count)
 
     elif game_state == "PLAYING":
+
+
+
         # --- Process Delayed Battery Shots ---
         now = pygame.time.get_ticks()
         if shot_queue and now >= next_shot_time:
@@ -1011,10 +1106,6 @@ while True:
                                         if res != "ALREADY_HIT": results.append((res, u_name)); fresh_strike = True
                                         ai_fog[my + dy][mx + dx] = 2
 
-
-
-
-##############################################################
                     if fresh_strike:
                         sfx = {"Corvette": shot_1_sound, "Frigate": shot_1_sound, "Destroyer": shot_2_sound,
                                "Carrier": plane_sound}
