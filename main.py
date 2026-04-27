@@ -276,7 +276,10 @@ class Unit:
         known = False
         # Calculate a floating offset based on time
         # 3.0 is the speed of the bobbing, 3.0 is the height (pixels)
-        bobbing_offset = math.sin(time.time() * 3.0 + (self.grid_pos[0][0] * 0.5)) * 3.0
+        if not self.is_destroyed:
+            bobbing_offset = math.sin(time.time() * 3.0 + (self.grid_pos[0][0] * 0.5)) * 3.0
+        else:
+            bobbing_offset = 0  # Sunk ships rest still on the seabed/surface
 
         min_x = min(r.x for r in self.rects)
         max_x = max(r.right for r in self.rects)
@@ -332,11 +335,27 @@ class Unit:
                     elif detail == "deck":
                         pygame.draw.rect(surface, (100, 100, 100), draw_rect.inflate(-4, -4))
 
-        if known and not self.is_destroyed:
-            # Labels also need to move with the ship
-            surface.blit(health_font.render(f"{self.current_hp}/{self.size}", True, WHITE),
-                         (self.rects[0].x, self.rects[0].y - 12 + bobbing_offset))
-            name_tag = name_tag_font.render(self.name, True, (200, 200, 200))
+        if known:
+            # 1. Handle the Status Label (HP or [SUNK])
+            if not self.is_destroyed:
+                # Show HP if alive
+                status_surf = health_font.render(f"{self.current_hp}/{self.size}", True, WHITE)
+            else:
+                # Show [SUNK] if destroyed
+                status_surf = health_font.render("[SUNK]", True, (255, 50, 50))  # Red text for sunk
+
+            surface.blit(status_surf, (self.rects[0].x, self.rects[0].y - 12 + bobbing_offset))
+            # 2. Always draw the Name Tag (Set to WHITE as requested)
+            name_tag = name_tag_font.render(self.name, True, WHITE)  # Changed from tuple to WHITE
+
+            text_x = min_x + (max_x - min_x) // 2 - name_tag.get_width() // 2
+            surface.blit(name_tag, (text_x, max_y + 2 + bobbing_offset))
+
+            # 2. Always draw the Name Tag
+            # Use a slightly darker color if sunk to differentiate
+            text_color = (200, 200, 200) if not self.is_destroyed else (120, 120, 120)
+            name_tag = name_tag_font.render(self.name, True, text_color)
+
             text_x = min_x + (max_x - min_x) // 2 - name_tag.get_width() // 2
             surface.blit(name_tag, (text_x, max_y + 2 + bobbing_offset))
 
@@ -423,16 +442,38 @@ def draw_aircraft(surface, center, target_pos, color, alpha):
     tx, ty = target_pos
     angle = math.atan2(ty - cy, tx - cx)
     length, wing_span = 12, 14
+
+    # Coordinates
     nose = (length * math.cos(angle), length * math.sin(angle))
     tail = (-length * math.cos(angle), -length * math.sin(angle))
     wing_angle = angle + math.pi / 2
     wing_l = (wing_span * math.cos(wing_angle), wing_span * math.sin(wing_angle))
     wing_r = (-wing_span * math.cos(wing_angle), -wing_span * math.sin(wing_angle))
-    pts = [(cx + nose[0], cy + nose[1]), (cx + wing_l[0], cy + wing_l[1]), (cx + tail[0] * 0.8, cy + tail[1] * 0.8),
-           (cx + wing_r[0], cy + wing_r[1])]
-    pygame.draw.polygon(surface, (*color, alpha), pts)
-    pygame.draw.circle(surface, (255, 255, 255, alpha), (int(cx + nose[0] * 0.3), int(cy + nose[1] * 0.3)), 2)
 
+    # --- AFTERBURNER LOGIC ---
+    # Draw the flame behind the tail
+    # We randomize the length slightly each frame to create a flicker
+    flame_len = random.randint(5, 15)
+    # The flame points in the opposite direction of the nose
+    flame_tip = (cx + (length + flame_len) * math.cos(angle + math.pi),
+                 cy + (length + flame_len) * math.sin(angle + math.pi))
+
+    # Outer flame (Orange/Red)
+    pygame.draw.line(surface, (255, 100, 0, alpha), (cx + tail[0], cy + tail[1]), flame_tip, 4)
+    # Inner flame (Yellow/White core)
+    pygame.draw.line(surface, (255, 255, 150, alpha), (cx + tail[0], cy + tail[1]),
+                     (cx + (length + flame_len * 0.6) * math.cos(angle + math.pi),
+                      cy + (length + flame_len * 0.6) * math.sin(angle + math.pi)), 2)
+
+    # --- AIRCRAFT BODY ---
+    pts = [(cx + nose[0], cy + nose[1]),
+           (cx + wing_l[0], cy + wing_l[1]),
+           (cx + tail[0] * 0.8, cy + tail[1] * 0.8),
+           (cx + wing_r[0], cy + wing_r[1])]
+
+    pygame.draw.polygon(surface, (*color, alpha), pts)
+    # Cockpit detail
+    pygame.draw.circle(surface, (255, 255, 255, alpha), (int(cx + nose[0] * 0.3), int(cy + nose[1] * 0.3)), 2)
 
 def draw_tooltip(surface, text_lines, pos):
     padding, line_height = 8, 16
