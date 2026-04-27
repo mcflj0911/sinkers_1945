@@ -46,7 +46,8 @@ UNIT_SCHEMES = {
     "Corvette": {"color": (100, 200, 255), "detail": "battery"},
     "Frigate": {"color": (200, 100, 255), "detail": "battery"},
     "Destroyer": {"color": (255, 150, 50), "detail": "battery"},
-    "Carrier": {"color": (70, 130, 180), "detail": "deck"}
+    "Carrier": {"color": (70, 130, 180), "detail": "deck"},
+    "Dreadnought": {"color": (150, 0, 0), "detail": "heavy_battery"} # New: Deep Red color
 }
 
 ASSET_DIR = "doodads"
@@ -255,6 +256,10 @@ class Unit:
         self.is_revealed = False
         self.scheme = UNIT_SCHEMES.get(name, {"color": PLAYER_COLOR, "detail": "rect"})
         self.update_geometry(x, y)
+        # Dreadnought Passive: Ignores the first 2 hits
+        self.heavy_armor = 2 if name == "Dreadnought" else 0
+        self.update_geometry(x, y)
+
 
     def update_geometry(self, x, y):
         self.grid_pos = []
@@ -332,6 +337,15 @@ class Unit:
                                     draw_rect.centerx + off, draw_rect.centery) if self.orientation == "V" else (
                                     draw_rect.centerx, draw_rect.centery + off)
                                 self._draw_battery(surface, start_pos, gun_tip_offset, gun_col)
+                    elif detail == "heavy_battery":
+                        # Draw 3 Triple-Turrets along the 6-length hull
+                        if i in [1, 3, 5]:
+                            for off in [-4, 0, 4]:
+                                # Corrected start_pos using draw_rect.centery
+                                start_pos = (
+                                draw_rect.centerx + off, draw_rect.centery) if self.orientation == "V" else (
+                                draw_rect.centerx, draw_rect.centery + off)
+                                self._draw_battery(surface, start_pos, gun_tip_offset, (20, 20, 20))
                     elif detail == "deck":
                         pygame.draw.rect(surface, (100, 100, 100), draw_rect.inflate(-4, -4))
 
@@ -379,6 +393,11 @@ def fire_at(tx, ty, targets, side_firing, source_pos=None, ignore_evasion=False)
             evaded = random.random() < unit.evasion if not ignore_evasion else False
 
             if not evaded:
+                # DREADNOUGHT PASSIVE: Absorbs hits until armor is gone
+                if unit.name == "Dreadnought" and unit.heavy_armor > 0:
+                    unit.heavy_armor -= 1
+                    return "ARMOR_BLOCKED", unit.name  # Handled in log
+
                 unit.health_map[idx] = False
                 stats["hits"] += 1
                 if side_firing == "PLAYER": current_score += 100
@@ -647,17 +666,25 @@ def reset_game(num_enemies=5):  # Default to easy
     active_wind = [WindParticle() for _ in range(25)]
     active_clouds = [TacticalCloud(side="ai") for _ in range(6)] + [TacticalCloud(side="player") for _ in range(6)]
 
-    pool = [("Scout", 1, 0.0, 1), ("Corvette", 2, 0.4, 1), ("Frigate", 3, 0.2, 2), ("Destroyer", 4, 0.15, 1),
-            ("Carrier", 5, 0.08, 5)]
+    pool = [
+        ("Scout", 1, 0.0, 1),
+        ("Corvette", 2, 0.4, 1),
+        ("Frigate", 3, 0.2, 2),
+        ("Destroyer", 4, 0.15, 1),
+        ("Carrier", 5, 0.08, 5),
+        ("Dreadnought", 6, 0.05, 1)  # Size 6, 5% Evasion, 1 Barrage per turn
+    ]
     player_units, ai_units, active_fires, active_smoke = [], [], [], []
 
+    # --- Inside reset_game() ---
     cooldown_values = {
         "Frigate": 2,
         "Destroyer": 4,
-        "Carrier": 6
+        "Carrier": 6,
+        "Dreadnought": 6  # Long cooldown for massive power
     }
 
-    # Place Player (Always 5 units)
+    # Place Player (Always X units)
     occ = set()
     for name, size, eva, ammo in pool:
         placed = False
@@ -831,6 +858,40 @@ def draw_game_elements(ai_thinking=False):
                     pygame.draw.circle(screen, (200, 200, 200), p_pos, 2)
                     pygame.draw.line(screen, WHITE, (p_pos[0] - 3, p_pos[1]), (p_pos[0] + 3, p_pos[1]), 1)
 
+            elif u.name == "Dreadnought":
+                # --- Dreadnought: Heavy Battery Charge Effect ---
+
+                # 1. Pulsing Red Core (Glowing hull effect)
+                # Oscillates between 50 and 180 alpha for a "breathing" look
+                pulse_alpha = 115 + math.sin(time_ms * 0.005) * 65
+                glow_surf = pygame.Surface((30, 30), pygame.SRCALPHA)
+                pygame.draw.circle(glow_surf, (255, 0, 0, pulse_alpha), (15, 15), 15)
+                # Blit the glow over the center of the massive 6-block ship
+                screen.blit(glow_surf, (center_x - 15, center_y - 15))
+
+                # 2. Orbital Power Rings
+                # Two rings rotating in opposite directions
+                for i, speed in enumerate([0.003, -0.002]):
+                    angle = time_ms * speed
+                    ring_radius = 25 + (i * 8)
+                    # Find a point on the ring to draw a "power node"
+                    node_x = center_x + math.cos(angle) * ring_radius
+                    node_y = center_y + math.sin(angle) * ring_radius
+
+                    # Draw the faint orbital path
+                    pygame.draw.circle(screen, (150, 0, 0, 100), (center_x, center_y), ring_radius, 1)
+                    # Draw the bright node
+                    pygame.draw.circle(screen, (255, 50, 50), (int(node_x), int(node_y)), 3)
+
+                # 3. Expanding Shockwave (Slow and Heavy)
+                # Every 2 seconds, a shockwave expands outward
+                wave_time = (time_ms % 2000) / 2000.0  # 0.0 to 1.0
+                wave_radius = int(wave_time * 60)
+                wave_alpha = int(255 * (1.0 - wave_time))
+
+                wave_surf = pygame.Surface((120, 120), pygame.SRCALPHA)
+                pygame.draw.circle(wave_surf, (255, 100, 0, wave_alpha), (60, 60), wave_radius, 2)
+                screen.blit(wave_surf, (center_x - 60, center_y - 60))
 
             elif u.name in ["Frigate", "Destroyer", "Corvette"]:
                 # --- Blinking Ammo Icon beside the unit ---
@@ -928,7 +989,8 @@ ASSET_IMAGES = {
     "Corvette": load_image("corvette.png", (INTEL_W, INTEL_H)),
     "Frigate": load_image("frigate.png", (INTEL_W, INTEL_H)),
     "Destroyer": load_image("destroyer.png", (INTEL_W, INTEL_H)),
-    "Carrier": load_image("carrier.png", (INTEL_W, INTEL_H))
+    "Carrier": load_image("carrier.png", (INTEL_W, INTEL_H)),
+    "Dreadnought": load_image("dreadnought.png", (INTEL_W, INTEL_H))
 }
 
 
@@ -942,7 +1004,7 @@ def get_current_intel_image():
         return ASSET_IMAGES.get(selected_unit.name)
 
     # Fallback to the original generic ship image
-    return ship_intel_img
+    return ship_intel_img2
 
 
 log_pulses = []
@@ -1054,10 +1116,11 @@ while True:
         unit_to_show = hovered_unit or (selected_unit if selected_unit else None)
         if unit_to_show and unit_to_show.side == "player":
             patterns = {"Scout": ["Type: RECON", "Effect: Reveal 16x16 Area", "CD: 6 Turns"],
-                        "Destroyer": ["Type: AOE", "Effect: Cross Pattern (+)", "CD: 4 Turns"],
+                        "Destroyer": ["Type: AOE", "Effect: 4x4 with 8 random shot placement", "CD: 4 Turns"],
                         "Carrier": ["Type: HEAVY STRIKE", "Effect: 2x2 Square", "CD: 6 Turns"],
                         "Frigate": ["Type: LIGHT STRIKE", "Effect: 2x2 Square", "CD: 2 Turns"],
-                        "Corvette": ["Type: SCOUT STRIKE", "Effect: 1x1 Precise", "CD: 0 Turns"]}
+                        "Corvette": ["Type: SCOUT STRIKE", "Effect: 1x1 Precise", "CD: 0 Turns"],
+                        "Dreadnought": ["Type: AOE", "Effect: 4x4 Precise", "CD: 6 Turns"]}
             intel = [f"UNIT: {unit_to_show.name.upper()}"] + patterns.get(unit_to_show.name,
                                                                           ["Type: Standard", "Effect: 1x1 Precise"])
             draw_tooltip(screen, intel, m_pos)
@@ -1069,6 +1132,25 @@ while True:
                         if 0 <= mx + dx < GRID_SIZE and 0 <= my + dy < 40: pygame.draw.rect(preview_surface,
                                                                                             PREVIEW_COLOR, pygame.Rect(
                                 (mx + dx) * CELL_SIZE + SIDE_PANEL_WIDTH, (my + dy) * CELL_SIZE, CELL_SIZE, CELL_SIZE))
+            elif selected_unit.name == "Dreadnought":
+                time_ms = pygame.time.get_ticks()
+            # 4x4 Heavy Bombardment Preview
+            # We use a slightly more intense red-tinted preview color for the Dreadnought
+                dread_preview_col = (255, 50, 50, 80 + math.sin(time_ms * 0.01) * 30)
+
+                for dy in range(-1, 3):
+                    for dx in range(-1, 3):
+                        px, py = mx + dx, my + dy
+                        if 0 <= px < GRID_SIZE and 0 <= py < 40:
+                            pygame.draw.rect(preview_surface, dread_preview_col,
+                                     pygame.Rect(px * CELL_SIZE + SIDE_PANEL_WIDTH,
+                                                 py * CELL_SIZE, CELL_SIZE, CELL_SIZE))
+
+                # Optional: Draw a thin border around the 4x4 area to define the strike zone
+                border_rect = pygame.Rect((mx - 1) * CELL_SIZE + SIDE_PANEL_WIDTH,
+                                  (my - 1) * CELL_SIZE, 4 * CELL_SIZE, 4 * CELL_SIZE)
+                pygame.draw.rect(preview_surface, (255, 255, 255, 100), border_rect, 1)
+
             elif selected_unit.name == "Scout":
                 pygame.draw.rect(preview_surface, (0, 255, 80, 40),
                                  pygame.Rect((mx - 8) * CELL_SIZE + SIDE_PANEL_WIDTH, (my - 8) * CELL_SIZE,
@@ -1081,6 +1163,7 @@ while True:
                                                                                             PREVIEW_COLOR, pygame.Rect(
                                 (mx + dx) * CELL_SIZE + SIDE_PANEL_WIDTH, (my + dy) * CELL_SIZE, CELL_SIZE, CELL_SIZE))
             screen.blit(preview_surface, (0, 0))
+
         for event in events:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
                 add_log("PLAYER", "SURRENDER", "Admiral retreat initiated.")
@@ -1110,6 +1193,7 @@ while True:
                         if selected_unit.name == "Destroyer":
                             coords = random.sample([(mx + dx, my + dy) for dy in range(-1, 3) for dx in range(-1, 3)
                                                     if 0 <= mx + dx < GRID_SIZE and 0 <= my + dy < 40], 8)
+
                         else:  # Corvette/Frigate
                             rad = 2 if selected_unit.name == "Frigate" else 1
                             coords = [(mx + dx, my + dy) for dy in range(rad) for dx in range(rad)
@@ -1121,6 +1205,21 @@ while True:
                                 "tx": cx, "ty": cy, "source": source_pos, "side": "PLAYER",
                                 "unit_name": selected_unit.name,
                                 "sound": shot_1_sound if selected_unit.name != "Destroyer" else shot_2_sound
+                            })
+                        fresh_strike = True
+                    # Inside the event loop for MOUSEBUTTONDOWN
+                    elif selected_unit.name == "Dreadnought":
+                        # 4x4 Bombardment Logic
+                        coords = [(mx + dx, my + dy) for dy in range(-1, 3) for dx in range(-1, 3)
+                                  if 0 <= mx + dx < GRID_SIZE and 0 <= my + dy < 40]
+                        # 2. Randomly shuffle the order of coordinates
+                        random.shuffle(coords)
+
+                        for cx, cy in coords:
+                            shot_queue.append({
+                                "tx": cx, "ty": cy, "source": source_pos, "side": "PLAYER",
+                                "unit_name": "Dreadnought",
+                                "sound": shot_2_sound  # Heavier sound effect
                             })
                         fresh_strike = True
 
@@ -1153,7 +1252,7 @@ while True:
                         if sfx.get(selected_unit.name): sfx[selected_unit.name].play()
                         shots_remaining -= 1
                         if shots_remaining <= 0:
-                            selected_unit.cooldown = {"Frigate": 2, "Destroyer": 4, "Carrier": 6, "Scout": 6}.get(
+                            selected_unit.cooldown = {"Frigate": 2, "Destroyer": 4, "Carrier": 6, "Scout": 6, "Dreadnought": 6}.get(
                                 selected_unit.name, 0)
                             selected_unit.is_selected = False;
                             selected_unit = None
@@ -1179,6 +1278,7 @@ while True:
 
                     # Execution of the specific ship's attack pattern
                     while ammo > 0:
+                        # Adjust range to prevent 3x3 grids from going off-board
                         tx, ty = random.randint(0, GRID_SIZE - 3), random.randint(40, GRID_SIZE - 3)
 
                         if attacker.name == "Destroyer":
@@ -1188,7 +1288,18 @@ while True:
                                 res, u_name = fire_at(sx, sy, player_units, "AI")
                                 results.append((res, u_name))
                                 player_map[sy][sx] = 1
+
+                        elif attacker.name == "Dreadnought":
+                            # Dreadnought Firing Method: 3x3 Heavy Bombardment (9 cells)
+                            for dy in range(4):
+                                for dx in range(4):
+                                    sx, sy = tx + dx, ty + dy
+                                    if 0 <= sx < GRID_SIZE and 40 <= sy < GRID_SIZE:
+                                        res, u_name = fire_at(sx, sy, player_units, "AI")
+                                        results.append((res, u_name))
+                                        player_map[sy][sx] = 1
                         else:
+                            # Standard firing for other ships
                             rad = 2 if attacker.name in ["Carrier", "Frigate"] else 1
                             for dy in range(rad):
                                 for dx in range(rad):
@@ -1205,7 +1316,7 @@ while True:
                     log_attack_results("AI", attacker.name, results)
 
                     # Set the cooldown for the ship that just fired
-                    attacker.cooldown = {"Frigate": 2, "Destroyer": 4, "Carrier": 6}.get(attacker.name, 0)
+                    attacker.cooldown = {"Frigate": 2, "Destroyer": 4, "Carrier": 6, "Dreadnought": 6}.get(attacker.name, 0)
 
             # 4. Tick down cooldowns for all AI ships (even those that didn't fire)
             for u in ai_units:
