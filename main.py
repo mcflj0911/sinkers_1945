@@ -681,7 +681,7 @@ def reset_game(num_enemies=5):  # Default to easy
         "Frigate": 2,
         "Destroyer": 4,
         "Carrier": 6,
-        "Dreadnought": 6  # Long cooldown for massive power
+        "Dreadnought": 8  # Long cooldown for massive power
     }
 
     # Place Player (Always X units)
@@ -1252,7 +1252,7 @@ while True:
                         if sfx.get(selected_unit.name): sfx[selected_unit.name].play()
                         shots_remaining -= 1
                         if shots_remaining <= 0:
-                            selected_unit.cooldown = {"Frigate": 2, "Destroyer": 4, "Carrier": 6, "Scout": 6, "Dreadnought": 6}.get(
+                            selected_unit.cooldown = {"Frigate": 2, "Destroyer": 4, "Carrier": 6, "Scout": 6, "Dreadnought": 8}.get(
                                 selected_unit.name, 0)
                             selected_unit.is_selected = False;
                             selected_unit = None
@@ -1316,7 +1316,7 @@ while True:
                     log_attack_results("AI", attacker.name, results)
 
                     # Set the cooldown for the ship that just fired
-                    attacker.cooldown = {"Frigate": 2, "Destroyer": 4, "Carrier": 6, "Dreadnought": 6}.get(attacker.name, 0)
+                    attacker.cooldown = {"Frigate": 2, "Destroyer": 4, "Carrier": 6, "Dreadnought": 8}.get(attacker.name, 0)
 
             # 4. Tick down cooldowns for all AI ships (even those that didn't fire)
             for u in ai_units:
