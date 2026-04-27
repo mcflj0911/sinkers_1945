@@ -628,14 +628,21 @@ def reset_game(num_enemies=5):  # Default to easy
     for _ in range(num_enemies):
         name, size, eva, ammo = random.choice(pool)
         placed = False
-        while not placed:
+        attempts = 0  # Track attempts to prevent infinite loops
+        while not placed and attempts < 100:
             ori = random.choice(["H", "V"])
-            sx, sy = random.randint(0, GRID_SIZE - size), random.randint(1, 38 - size)
+            # Use 0 to 39 for the AI's top half of the grid
+            sx = random.randint(0, GRID_SIZE - size)
+            sy = random.randint(0, 39 - size)
+
             cells = [(sx + i, sy) if ori == "H" else (sx, sy + i) for i in range(size)]
+
             if not any(c in occ_ai for c in cells):
                 ai_units.append(Unit(name, size, sx, sy, ori, "ai", eva, ammo))
                 occ_ai.update(cells)
                 placed = True
+            attempts += 1
+    print(f"DEBUG: Spawned {len(ai_units)} AI ships.")
 
     ai_fog = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
     player_map = [[0] * GRID_SIZE for _ in range(GRID_SIZE)]
@@ -1024,34 +1031,57 @@ while True:
                             turn = "ai"
         if turn == "ai":
             random_pause_thinking()
-            avail = [u for u in ai_units if not u.is_destroyed and u.cooldown == 0]
-            if avail:
-                attacker = random.choice(avail)
-                results, ammo = [], attacker.ammo_capacity
-                while ammo > 0:
-                    tx, ty = random.randint(0, GRID_SIZE - 3), random.randint(40, GRID_SIZE - 3)
-                    if attacker.name == "Destroyer":
-                        strikes = random.sample([(tx + dx, ty + dy) for dy in range(-1, 3) for dx in range(-1, 3) if
-                                                 0 <= tx + dx < GRID_SIZE and 40 <= ty + dy < GRID_SIZE], 8)
-                        for sx, sy in strikes:
-                            res, u_name = fire_at(sx, sy, player_units, "AI");
-                            results.append((res, u_name));
-                            player_map[sy][sx] = 1
-                    else:
-                        rad = 2 if attacker.name in ["Carrier", "Frigate"] else 1
-                        for dy in range(rad):
-                            for dx in range(rad):
-                                if 0 <= tx + dx < GRID_SIZE and 40 <= ty + dy < GRID_SIZE:
-                                    res, u_name = fire_at(tx + dx, ty + dy, player_units, "AI",
-                                                          ignore_evasion=(attacker.name == "Corvette"));
-                                    results.append((res, u_name));
-                                    player_map[ty + dy][tx + dx] = 1
-                    ammo -= 1
-                log_attack_results("AI", attacker.name, results)
-                attacker.cooldown = {"Frigate": 2, "Destroyer": 4, "Carrier": 6}.get(attacker.name, 0)
+
+            # 1. Determine how many unique ships will attack this turn
+            attack_count = {"EASY": 1, "MEDIUM": 2, "HARD": 3}.get(difficulty, 1)
+
+            # 2. Get a list of all AI units that are still afloat and ready
+            available_attackers = [u for u in ai_units if not u.is_destroyed and u.cooldown == 0]
+
+            # 3. Limit the attack count to the number of ships actually available
+            actual_attackers_this_turn = random.sample(available_attackers, min(len(available_attackers), attack_count))
+
+            if actual_attackers_this_turn:
+                for attacker in actual_attackers_this_turn:
+                    results, ammo = [], attacker.ammo_capacity
+
+                    # Execution of the specific ship's attack pattern
+                    while ammo > 0:
+                        tx, ty = random.randint(0, GRID_SIZE - 3), random.randint(40, GRID_SIZE - 3)
+
+                        if attacker.name == "Destroyer":
+                            strikes = random.sample([(tx + dx, ty + dy) for dy in range(-1, 3) for dx in range(-1, 3) if
+                                                     0 <= tx + dx < GRID_SIZE and 40 <= ty + dy < GRID_SIZE], 8)
+                            for sx, sy in strikes:
+                                res, u_name = fire_at(sx, sy, player_units, "AI")
+                                results.append((res, u_name))
+                                player_map[sy][sx] = 1
+                        else:
+                            rad = 2 if attacker.name in ["Carrier", "Frigate"] else 1
+                            for dy in range(rad):
+                                for dx in range(rad):
+                                    if 0 <= tx + dx < GRID_SIZE and 40 <= ty + dy < GRID_SIZE:
+                                        res, u_name = fire_at(tx + dx, ty + dy, player_units, "AI",
+                                                              ignore_evasion=(attacker.name == "Corvette"))
+                                        results.append((res, u_name))
+                                        player_map[ty + dy][tx + dx] = 1
+                        ammo -= 1
+                    pygame.display.flip()  # Update the screen to show the hits
+                    pygame.time.delay(200)  # Wait 0.4 seconds before the next ship fires
+
+                    # Log each attacker's results separately
+                    log_attack_results("AI", attacker.name, results)
+
+                    # Set the cooldown for the ship that just fired
+                    attacker.cooldown = {"Frigate": 2, "Destroyer": 4, "Carrier": 6}.get(attacker.name, 0)
+
+            # 4. Tick down cooldowns for all AI ships (even those that didn't fire)
             for u in ai_units:
-                if u.cooldown > 0: u.cooldown -= 1
+                if u.cooldown > 0:
+                    u.cooldown -= 1
+
             turn = "player"
+
         if sum(u.current_hp for u in ai_units) == 0:
             eff = (player_stats["hits"] / max(1, player_stats["shots"]))
             final_score = int((current_score * eff * (sum(u.current_hp for u in player_units) * 200)) / 300)
